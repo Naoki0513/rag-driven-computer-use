@@ -2,21 +2,43 @@
 
 Webページをクロールし、ページ間のリンク関係をNeo4jグラフデータベースに格納するツールです。
 
-## 🚀 セットアップ完了内容
+## 🎯 プロジェクト概要
 
-### 1. Docker環境
-- Neo4jコンテナ: `neo4j-crawler`
-- ポート: 7474 (Web UI), 7687 (Bolt)
+このプロジェクトは、Webドメイン内のページ構造を分析し、ページ間の遷移関係をグラフデータベース（Neo4j）に格納することを目的としています。
+
+## 📋 必要な環境
+
+### 1. Neo4j
+- URI: `bolt://localhost:7687`
+- Web UI: `http://localhost:7474`
 - 認証情報: neo4j / testpassword
 
-### 2. Python環境
-- 仮想環境: `.venv`
-- 主要パッケージ:
-  - crawl4ai: Webクローリング
-  - neo4j: グラフデータベース接続
-  - scrapegraphai: スクレイピング支援
+### 2. Python 3.x
+必要なパッケージ:
+```bash
+pip install neo4j crawl4ai beautifulsoup4 requests
+```
 
-### 3. 作成したスクリプト
+## 🔧 プロジェクト構成
+
+```
+webgraph-demo/
+├── README.md                    # このファイル
+├── simple_crawl.py             # メインのWebクローラー
+├── crawl_and_push_final.py     # 高度なクローリング機能
+├── query_neo4j.py              # Neo4jクエリツール
+├── test_neo4j_connection.py    # Neo4j接続テスト
+└── .gitignore                  # Git除外設定
+```
+
+## 🚀 使い方
+
+### 1. Neo4j接続テスト
+```bash
+python test_neo4j_connection.py
+```
+
+### 2. Webサイトのクロール
 
 #### `simple_crawl.py` (推奨)
 シンプルなBFSアルゴリズムでWebサイトをクロールします。
@@ -31,13 +53,24 @@ python simple_crawl.py https://www.wikipedia.org 2
 ```
 
 #### `crawl_and_push_final.py`
-crawl4aiの深層クロール機能を使用（実験的）
+crawl4aiの高度な機能を使用した深層クロール：
 
-## 📊 実行結果
+```bash
+python crawl_and_push_final.py <URL> [深さ]
+```
 
-### テスト結果
-- `http://the-agent-company.com:3000`: 内部リンクなし（SPA/認証サイトの可能性）
-- `https://www.wikipedia.org`: 340リンクを検出（成功）
+### 3. Neo4jでデータを確認
+
+#### `query_neo4j.py`
+コマンドラインからNeo4jにクエリを実行：
+
+```bash
+# 統計情報を表示
+python query_neo4j.py
+
+# インタラクティブモード
+python query_neo4j.py interactive
+```
 
 ## 🔍 Neo4jでグラフを表示
 

@@ -1,1 +1,87 @@
-/.venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Virtual Environment
+bin/
+include/
+lib/
+lib64/
+share/
+pyvenv.cfg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific - data files
+*.json
+*.cypher
+*.html
+!README.md
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Output files
+output/
+results/
+crawl_results/
+
+# Neo4j import/export
+import/
+export/
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
