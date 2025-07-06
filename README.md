@@ -1,163 +1,198 @@
-# Webgraph Demo - Neo4j状態遷移グラフクローラー
+# Web Graph Crawler
 
-Webアプリケーションの状態遷移をクロールし、Neo4jグラフデータベースに格納するツールです。
+Webアプリケーションの状態遷移をクロールし、ページ状態とユーザーインタラクションをNeo4jグラフデータベースに格納する高速並列クローラーです。
 
 ## 🎯 プロジェクト概要
 
-このプロジェクトは、Webアプリケーション（特にRocket.Chat）の状態遷移を完全に記録し、ページ間の遷移関係をグラフデータベース（Neo4j）に格納することを目的としています。
+このプロジェクトは、Webアプリケーションのページ状態とそれらの間の遷移を自動的に探索し、その構造をNeo4jグラフデータベースに保存します。単純なリンクだけでなく、ボタンクリックやフォーム送信などのインタラクションも記録し、アプリケーションの完全な状態遷移グラフを構築します。
 
 ## 📋 必要な環境
 
-### 1. Neo4j
+### Neo4j
 - URI: `bolt://localhost:7687`
 - Web UI: `http://localhost:7474`
-- 認証情報: neo4j / testpassword
+- ユーザー名: `neo4j`
+- パスワード: `testpassword`
 
-### 2. Python 3.x
-必要なパッケージ:
+### Python
+- Python 3.12.3以上
+- pip 24.0以上
+
+## 🔧 セットアップ
+
+### 1. リポジトリのクローン
 ```bash
-pip install neo4j playwright crawl4ai beautifulsoup4 requests
-playwright install chromium
+git clone https://github.com/yourusername/webgraph-demo.git
+cd webgraph-demo
 ```
 
-## 🔧 プロジェクト構成
+### 2. 仮想環境の作成（推奨）
+```bash
+# 仮想環境の作成
+python -m venv venv
 
+# 仮想環境の有効化（Windows）
+venv\Scripts\activate
+
+# 仮想環境の有効化（Linux/Mac）
+source venv/bin/activate
 ```
-webgraph-demo/
-├── README.md                            # このファイル
-├── complete_rocket_chat_crawler.py      # 完全版Rocket.Chatクローラー
-├── full_state_graph_crawler.py          # 包括的状態遷移クローラー
-├── simple_crawl.py                      # シンプルWebクローラー
-├── query_neo4j.py                       # Neo4jクエリツール
-├── test_neo4j_connection.py             # Neo4j接続テスト
-├── neo4j_queries.md                     # Neo4jクエリサンプル集
-└── .gitignore                           # Git除外設定
+
+### 3. 依存関係のインストール
+```bash
+pip install -r requirements.txt
+python -m playwright install
+```
+
+### 4. システム依存関係のインストール（Linux/WSL）
+```bash
+sudo playwright install-deps
 ```
 
 ## 🚀 使い方
 
-### 1. Neo4j接続テスト
+### 基本的なクロール
 ```bash
-python test_neo4j_connection.py
+python crawler.py --url <URL>
 ```
 
-### 2. Rocket.Chat完全クロール（推奨）
-最も包括的なRocket.Chatアプリケーション状態遷移の記録：
-
+例：
 ```bash
-python complete_rocket_chat_crawler.py
+# 基本的な使用
+python crawler.py --url https://example.com
+
+# 深さと状態数を指定
+python crawler.py --url https://example.com --depth 5 --limit 100
+
+# 認証が必要なサイト
+python crawler.py --url https://app.example.com --user myuser --password mypass
+
+# ブラウザを表示して実行（デバッグ用）
+python crawler.py --url https://example.com --headful
+
+# 並列度を上げて高速化
+python crawler.py --url https://example.com --parallel 16
+
+# すべての状態を探索（制限なし）
+python crawler.py --url https://example.com --exhaustive
 ```
 
-#### 特徴
-- ✅ ログイン認証対応
-- ✅ 完全な状態記録（HTML、ARIA snapshot、スクリーンショット）
-- ✅ インタラクティブ要素の自動検出・操作
-- ✅ 状態遷移の完全記録
-- ✅ Neo4jへのグラフ保存
+### クロールの仕組み
+1. 指定されたURLから開始
+2. ページの状態（URL、タイトル、HTML、ARIAスナップショット）をキャプチャ
+3. クリック可能な要素（ボタン、リンク、タブなど）を自動検出
+4. 各要素をクリックまたはナビゲートして新しい状態を発見
+5. BFS（幅優先探索）アルゴリズムで効率的に探索
+6. 並列処理により高速にクロール
+7. 状態と遷移情報をNeo4jに保存
 
-### 3. 包括的状態遷移クロール
-あらゆるWebアプリケーションに対応する汎用的な状態遷移クローラー：
+## 📊 データ構造
 
-```bash
-python full_state_graph_crawler.py
-```
+### Stateノード
+- `hash`: 状態の一意識別子
+- `url`: ページのURL
+- `title`: ページタイトル
+- `state_type`: 状態のタイプ（home, channel, dm, thread, modal, settings, profile, page）
+- `html`: ページのHTML（サイズ制限あり）
+- `aria_snapshot`: ARIAスナップショット（アクセシビリティ情報）
+- `timestamp`: キャプチャ日時
 
-### 4. シンプルWebクロール
-従来のWebサイトクロール：
+### TRANSITIONリレーション
+- 状態間の遷移を表現
+- `action_type`: アクションタイプ（click, navigate）
+- `element_selector`: クリックした要素のセレクタ
+- `element_text`: クリックした要素のテキスト
+- `aria_context`: ARIA情報のコンテキスト
+- 方向性あり（FROM → TO）
 
-```bash
-python simple_crawl.py <URL> [深さ]
-```
+## 🔍 データの確認
 
-例:
-```bash
-python simple_crawl.py https://www.wikipedia.org 2
-```
-
-### 5. Neo4jデータ確認
-
-#### コマンドライン
-```bash
-# 統計情報を表示
-python query_neo4j.py
-
-# インタラクティブモード
-python query_neo4j.py interactive
-```
-
-#### Webブラウザ
+### Neo4j Web UIでの確認
 1. http://localhost:7474 にアクセス
-2. ログイン: neo4j / testpassword
-3. 以下のクエリを実行:
+2. ログイン（neo4j / testpassword）
+3. 以下のクエリを実行：
 
 ```cypher
 # すべての状態と遷移を表示
-MATCH (s1:State)-[t:TRANSITION]->(s2:State) 
-RETURN s1, t, s2 LIMIT 50
+MATCH (s1:State)-[t:TRANSITION]->(s2:State) RETURN s1,t,s2
 
-# 状態タイプ別の統計
-MATCH (s:State) 
-RETURN s.state_type, count(*) as count 
-ORDER BY count DESC
+# 状態数を確認
+MATCH (s:State) RETURN count(s) as stateCount
+
+# 遷移数を確認
+MATCH ()-[t:TRANSITION]->() RETURN count(t) as transitionCount
+
+# 特定URLを含む状態を検索
+MATCH (s:State) WHERE s.url CONTAINS 'example' RETURN s
+
+# 最も多く遷移先となっている状態
+MATCH (s:State)<-[t:TRANSITION]-(other)
+RETURN s.url, s.state_type, count(other) as inbound_transitions
+ORDER BY inbound_transitions DESC
+LIMIT 10
+
+# クリック要素ごとの遷移を集計
+MATCH ()-[t:TRANSITION]->()
+RETURN t.element_text, t.element_selector, count(*) as click_count
+ORDER BY click_count DESC
+LIMIT 20
 ```
 
-## 📊 出力データ構造
+## ⚙️ 設定
 
-### 状態ノード (State)
-- `hash`: 状態の一意識別子
-- `url`: ページURL
-- `title`: ページタイトル
-- `state_type`: 状態タイプ（channel, dm, home, settings等）
-- `timestamp`: 記録日時
-
-### 遷移エッジ (TRANSITION)
-- `action_type`: アクション種類（click, navigate, submit）
-- `element_selector`: 操作した要素のセレクタ
-- `element_text`: 操作した要素のテキスト
-
-### コンテンツノード (Content)
-- `html`: ページのHTML
-- `aria_snapshot`: ARIA情報のJSON
-- `screenshot`: スクリーンショット（Base64）
-
-## ⚠️ 注意事項
-
-- 対象サイトの利用規約を確認してください
-- クロール頻度に注意（サーバー負荷を考慮）
-- ログイン認証が必要なサイトでは認証情報を適切に設定してください
-
-## 🛠️ トラブルシューティング
-
-### Neo4j接続エラー
-```bash
-python test_neo4j_connection.py  # 接続テスト実行
-```
-
-### クロール結果が少ない場合
-- JavaScript必須のSPAサイトの可能性
-- 認証設定の確認
-- ネットワーク接続の確認
-
-## 📝 設定変更
-
-各クローラーファイルの冒頭で以下の設定を変更可能：
+crawler.pyの冒頭で以下の設定を変更可能：
 
 ```python
-# Neo4j設定
+# Neo4j接続情報
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 
-# 対象サイト設定
-TARGET_URL = "http://your-target-site.com"
-LOGIN_USERNAME = "your-username"
-LOGIN_PASSWORD = "your-password"
+# クロール設定
+TARGET_URL = "https://example.com"  # デフォルトURL
+LOGIN_USER = "your_id"              # デフォルトユーザー名
+LOGIN_PASS = "your_pass"            # デフォルトパスワード
+MAX_STATES = 10000                  # 最大状態数
+MAX_DEPTH = 20                      # 最大探索深度
+PARALLEL_TASKS = 8                  # 並列タスク数
+
+# HTML保存サイズ上限
+MAX_HTML_SIZE = 100 * 1024          # 100KB
+MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 ```
 
-## 📈 今後の改善案
+## ⚠️ 注意事項
 
-1. リアルタイム状態監視機能
-2. 状態差分検出の最適化
-3. 並列クロール処理
-4. より高度な要素認識アルゴリズム
-5. 可視化ダッシュボードの追加 
+- 対象サイトの利用規約を確認してください
+- 大規模なサイトをクロールする場合は、サーバーへの負荷に注意してください
+- robots.txtの規約を尊重してください
+- 必要に応じてクロール間隔を調整してください
+
+## 🛠️ トラブルシューティング
+
+### Neo4j接続エラー
+- Neo4jが起動していることを確認
+- 接続情報（URI、ユーザー名、パスワード）を確認
+- ファイアウォールの設定を確認
+
+### クロールが遅い場合
+- ネットワーク接続を確認
+- 対象サイトのレスポンス速度を確認
+- 深さパラメータを調整
+
+### メモリ不足
+- 深さパラメータを小さくする
+- 一度にクロールするページ数を制限する
+
+## 📝 今後の改善案
+
+- [x] 認証が必要なサイトへの対応（実装済み）
+- [x] JavaScriptで動的に生成される要素の取得（実装済み）
+- [x] 並列クロール処理の実装（実装済み）
+- [ ] クロール結果の可視化機能
+- [ ] クロール進捗のリアルタイム表示
+- [ ] クロール結果のエクスポート機能
+- [ ] フォーム入力の自動化
+- [ ] スクリーンショットの保存
+- [ ] APIレスポンスのキャプチャ
+- [ ] 状態の差分検出機能
