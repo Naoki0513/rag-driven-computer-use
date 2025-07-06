@@ -23,12 +23,15 @@ pip install neo4j crawl4ai beautifulsoup4 requests
 
 ```
 webgraph-demo/
-├── README.md                    # このファイル
-├── simple_crawl.py             # メインのWebクローラー
-├── crawl_and_push_final.py     # 高度なクローリング機能
-├── query_neo4j.py              # Neo4jクエリツール
-├── test_neo4j_connection.py    # Neo4j接続テスト
-└── .gitignore                  # Git除外設定
+├── README.md                       # このファイル
+├── simple_crawl.py                # メインのWebクローラー
+├── crawl_and_push_final.py        # 高度なクローリング機能
+├── state_graph_crawler.py         # 状態遷移グラフ収集（Playwright版）
+├── state_graph_crawler_crawl4ai.py # 状態遷移グラフ収集（軽量版）
+├── query_neo4j.py                 # Neo4jクエリツール
+├── test_neo4j_connection.py       # Neo4j接続テスト
+├── neo4j_queries.md               # Neo4jクエリサンプル集
+└── .gitignore                     # Git除外設定
 ```
 
 ## 🚀 使い方
@@ -38,7 +41,51 @@ webgraph-demo/
 python test_neo4j_connection.py
 ```
 
-### 2. Webサイトのクロール
+### 2. 🆕 Webアプリケーション状態遷移グラフの収集
+
+SPAを含むあらゆるWebアプリケーションの状態遷移を完全に記録する新機能です。
+
+#### 特徴
+- ✅ ページの完全な状態を保存（HTML、ARIA snapshot、スクリーンショット）
+- ✅ インタラクティブな要素（ボタン、リンク）のクリックによる状態遷移を記録
+- ✅ Neo4jに状態（State）ノードと遷移（TRANSITION）エッジとして保存
+- ✅ ログイン認証にも対応
+
+#### セットアップ
+```bash
+# 仮想環境の作成と有効化
+python3 -m venv venv
+source venv/bin/activate
+
+# Playwright版の依存関係インストール
+pip install playwright neo4j
+playwright install chromium
+
+# または軽量版の依存関係
+pip install crawl4ai beautifulsoup4 neo4j
+```
+
+#### 実行方法
+```bash
+# Playwright版（推奨）- フル機能
+python state_graph_crawler.py
+
+# crawl4ai版（軽量）- スクリーンショットなし
+python state_graph_crawler_crawl4ai.py
+```
+
+#### Neo4jでの確認
+```cypher
+# 状態と遷移を可視化
+MATCH (s1:State)-[t:TRANSITION]->(s2:State) 
+RETURN s1, t, s2
+
+# ページ内容を確認
+MATCH (s:State)-[:HAS_CONTENT]->(c:Content)
+RETURN s.url, s.title, substring(c.html, 0, 200)
+```
+
+### 3. 従来のWebサイトクロール
 
 #### `simple_crawl.py` (推奨)
 シンプルなBFSアルゴリズムでWebサイトをクロールします。
@@ -114,7 +161,10 @@ docker restart neo4j-crawler  # 再起動
 
 ## 📝 今後の改善案
 
-1. JavaScript実行をサポート（Selenium/Puppeteer統合）
-2. 認証機能の追加
+1. ~~JavaScript実行をサポート（Selenium/Puppeteer統合）~~ ✅ 実装済み（Playwright版）
+2. ~~認証機能の追加~~ ✅ 実装済み
 3. クロール結果の可視化改善
-4. パフォーマンス最適化（並列クロール） 
+4. パフォーマンス最適化（並列クロール）
+5. フォーム入力による状態遷移の記録
+6. より高度なARIA情報の抽出と活用
+7. 状態の差分検出による効率的な記録 
