@@ -24,11 +24,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - 段階的思考が必要な場合はultrathinkで思考プロセスを明示
    - 技術的な実装や調査タスクでは特にultrathinkを活用すること
 
-5. **WSL環境での注意点**: 
+5. **Python仮想環境の構築**: 
+   - Pythonの仮想環境を構築する際は必ずRust製のPythonパッケージ管理ツール「uv」を使うようにしてください
+   - 使い方はこちらの記事を参考にしてください: https://gihyo.jp/article/2024/03/monthly-python-2403
+
+6. **WSL環境での注意点**: 
    - コマンド実行時にエラーが発生した場合は、環境の特性を理解した上でユーザーに自身の環境でのコマンド実行を促すこと
    - 作業ディレクトリ外への移動が制限されている（セキュリティ上の制約）
 
-6. **環境制約の記録**: 
+7. **環境制約の記録**: 
    - 新たな環境の制約や制限事項を発見した場合は、必ずCLAUDE.mdの「この環境の制約事項」セクションに追記すること
    - 制約の内容、原因、解決方法を明確に記載すること
    - プロジェクトのコマンド例も必要に応じて更新すること
@@ -38,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Python実行環境
 - **Python 3.12.3** がインストール済み（`python3`および`python`コマンドで実行可能）
 - **pip 24.0** がインストール済み（`pip`、`pip3`、`python3 -m pip`すべて利用可能）
-- **venvモジュール** が利用可能（仮想環境の作成が可能）
+- **uv** - Rust製の高速なPythonパッケージ管理ツール（仮想環境作成には必ずuvを使用）
 - **ensurepipモジュール** が利用可能（pip 24.0）
 - `~/.bashrc`に`alias python=python3`を追加済み
 - **python-is-python3**パッケージによりシステムレベルで`python`コマンドが`python3`にリンクされている
@@ -46,7 +50,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### インストール済みPythonパッケージ
 - `python3-full 3.12.3-0ubuntu2`: 完全なPython環境（ensurepipを含む）
 - `python3-pip 24.0+dfsg-1ubuntu1.2`: pipパッケージマネージャー
-- `python3-venv 3.12.3-0ubuntu2`: 仮想環境作成モジュール
+- **uv**: Rust製の高速なPythonパッケージ管理ツール（仮想環境の作成と管理に使用）
 
 ### 作業ディレクトリの制約
 - Claude Codeのセキュリティポリシーにより、セッションの許可された作業ディレクトリ（`/mnt/c/GitHub/webgraph-demo`を含む）の子ディレクトリにのみ移動可能
@@ -62,12 +66,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 2. **仮想環境での作業**（推奨）:
    ```bash
+   # uvのインストール（初回のみ）
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   
    # 仮想環境の作成
-   python -m venv myenv
-   # 仮想環境の有効化
-   source myenv/bin/activate
-   # 仮想環境内でのパッケージインストール
-   pip install <package-name>
+   uv venv
+   
+   # 仮想環境の有効化（Linux/Mac）
+   source .venv/bin/activate
+   
+   # 仮想環境の有効化（Windows）
+   .venv\Scripts\activate
+   
+   # パッケージのインストール
+   uv pip install <package-name>
+   
    # 仮想環境の無効化
    deactivate
    ```
@@ -86,6 +99,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### プロジェクト概要
 Webアプリケーションの状態遷移をクロールし、ページ状態とインタラクションをNeo4jグラフデータベースに格納する高速並列クローラー。
 
+### 重要：このプロジェクトの仮想環境について
+
+このプロジェクトでは**uvで作成した仮想環境（.uv_venv）**を使用しています。
+
+#### コマンド実行時の注意事項
+**すべてのPythonコマンドを実行する前に、必ず仮想環境を有効化してください：**
+```bash
+# 仮想環境の有効化（必須）
+source .uv_venv/bin/activate
+
+# その後でコマンドを実行
+python crawler.py --url <URL>
+```
+
+
+#### 仮想環境内にインストール済みのパッケージ
+requirements.txtに基づいて以下のパッケージがインストールされています：
+- strands-agents>=0.2.1（注：インポート時は`from strands import Agent`を使用）
+- strands-agents-tools>=0.1.8（注：インポート時は`from strands.tools import tool`を使用）
+- neo4j>=5.24.0
+- python-dotenv>=1.0.1
+- pytest>=8.2.0
+- pytest-asyncio>=0.21.0（非同期テスト用）
+- playwright==1.47.0
+- requests>=2.31.0
+
 ### 環境設定
 - **Neo4j接続情報**:
   - URI: `bolt://localhost:7687`
@@ -93,23 +132,32 @@ Webアプリケーションの状態遷移をクロールし、ページ状態�
   - パスワード: `testpassword`
   - Web UI: `http://localhost:7474`
 
-### 環境準備
+### 環境準備（既に構築済み）
 
-#### 1. 仮想環境の作成と有効化
+**注意：このプロジェクトではすでに仮想環境（.uv_venv）が構築されています。**
+
+#### 既存の仮想環境を使用する場合
 ```bash
-# 仮想環境の作成
-python -m venv venv
-
 # 仮想環境の有効化（Linux/Mac）
-source venv/bin/activate
+source .uv_venv/bin/activate
 
 # 仮想環境の有効化（Windows）
-venv\Scripts\activate
+.uv_venv\Scripts\activate
 ```
 
-#### 2. 依存関係のインストール
+#### 新規に環境を構築する場合（通常は不要）
 ```bash
-pip install -r requirements.txt
+# uvのインストール（初回のみ）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 仮想環境の作成
+uv venv .uv_venv
+
+# 仮想環境の有効化
+source .uv_venv/bin/activate
+
+# 依存関係のインストール
+uv pip install -r requirements.txt
 python -m playwright install
 ```
 
@@ -125,13 +173,19 @@ sudo apt-get install libxslt1.1 libwoff1 libvpx9 libevent-2.1-7t64 \
 
 ### コマンド実行
 
+#### 重要：仮想環境の有効化
+**すべてのコマンドを実行する前に、必ず仮想環境を有効化してください：**
+```bash
+source .uv_venv/bin/activate
+```
+
 #### Webアプリケーション状態グラフクローラー（メインスクリプト）
 ```bash
 # 基本的な使用方法
-python crawler.py --url <URL>
+python utilities/crawler.py --url <URL>
 
 # すべてのオプション
-python crawler.py \
+python utilities/crawler.py \
     --url https://example.com \
     --user username \
     --password password \
@@ -143,7 +197,7 @@ python crawler.py \
     --exhaustive
 
 # 例: 
-python crawler.py --url https://example.com --depth 5 --limit 100
+python utilities/crawler.py --url https://example.com --depth 5 --limit 100
 ```
 
 #### オプション説明

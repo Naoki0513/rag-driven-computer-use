@@ -6,7 +6,9 @@ __pycache__/
 .Python
 env/
 venv
+test_venv/
 .venv/
+.uv_venv/
 ENV/
 env.bak/
 venv.bak/
@@ -31,10 +33,13 @@ pyvenv.cfg
 Thumbs.db
 
 # Project specific - data files
-*.json
+# *.json  # コメントアウト（requirements.jsonなどは必要）
 *.cypher
-*.html
+# *.html  # コメントアウト（テストファイルなどは必要）
 !README.md
+!requirements.txt
+!pyproject.toml
+!.env.example
 
 # Environment variables
 .env
@@ -61,6 +66,11 @@ crawl_results/
 # Neo4j import/export
 import/
 export/
+
+# Playwright
+playwright-report/
+test-results/
+playwright/.cache/
 
 # Test coverage
 htmlcov/
