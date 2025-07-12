@@ -26,7 +26,8 @@
       "Bash(./test_venv/bin/pytest -v)",
       "Bash(grep:*)",
       "Bash(echo $WSLENV)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(.venvScriptsactivate)"
     ],
     "deny": [
       "Read(file_path:*.env)",
