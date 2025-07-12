@@ -7,13 +7,62 @@ from agent.config import (
 )
 from utilities.neo4j_utils import Neo4jManager
 from agent import tools
-from agent.tools import run_cypher, get_database_schema
-from agent.prompt import SYSTEM_PROMPT
+from agent.tools import run_cypher
+from agent.prompt import create_system_prompt
 
 # グローバルNeo4jマネージャーインスタンス
 neo4j_manager = None
 
-def create_agent() -> Agent:
+def get_database_schema(neo4j_manager: Neo4jManager) -> str:
+    """データベースのスキーマ情報を取得"""
+    try:
+        # ノードラベルの取得
+        labels_query = "CALL db.labels() YIELD label RETURN label"
+        labels = neo4j_manager.execute_cypher(labels_query)
+        label_list = [record['label'] for record in labels]
+        
+        # リレーションシップタイプの取得
+        rel_query = "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType"
+        relationships = neo4j_manager.execute_cypher(rel_query)
+        rel_list = [record['relationshipType'] for record in relationships]
+        
+        # プロパティキーの取得
+        prop_query = "CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey"
+        properties = neo4j_manager.execute_cypher(prop_query)
+        prop_list = [record['propertyKey'] for record in properties[:20]]  # 最大20件
+        
+        # 各ノードラベルのノード数を取得
+        node_counts = []
+        for label in label_list:
+            count_query = f"MATCH (n:{label}) RETURN count(n) as count"
+            result = neo4j_manager.execute_cypher(count_query)
+            if result:
+                node_counts.append(f"  - {label}: {result[0]['count']}ノード")
+        
+        # 各リレーションシップタイプの数を取得
+        rel_counts = []
+        for rel_type in rel_list:
+            count_query = f"MATCH ()-[r:{rel_type}]->() RETURN count(r) as count"
+            result = neo4j_manager.execute_cypher(count_query)
+            if result:
+                rel_counts.append(f"  - {rel_type}: {result[0]['count']}件")
+        
+        schema_info = f"""
+データベーススキーマ情報:
+- ノードラベル: {', '.join(label_list) if label_list else 'なし'}
+{chr(10).join(node_counts) if node_counts else ''}
+
+- リレーションシップタイプ: {', '.join(rel_list) if rel_list else 'なし'}
+{chr(10).join(rel_counts) if rel_counts else ''}
+
+- プロパティキー（一部）: {', '.join(prop_list) if prop_list else 'なし'}
+"""
+        return schema_info
+        
+    except Exception as e:
+        return f"スキーマ取得エラー: {str(e)}"
+
+def create_agent(database_schema: str = "") -> Agent:
     """Bedrockモデルを使用するエージェントを作成"""
     # Strands AgentsのBedrockModelを使用（AWS認証は環境変数から自動取得）
     model = BedrockModel(
@@ -23,9 +72,9 @@ def create_agent() -> Agent:
     
     agent = Agent(
         name="WebGraph Cypher Agent",
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=create_system_prompt(database_schema),
         model=model,
-        tools=[run_cypher, get_database_schema]
+        tools=[run_cypher]
     )
     
     return agent
@@ -51,9 +100,14 @@ def run_single_query(query: str):
         traceback.print_exc()
         return
     
+    # データベース構造を取得
+    print("データベーススキーマを取得中...")
+    database_schema = get_database_schema(neo4j_manager)
+    print("[OK] データベーススキーマを取得しました")
+    
     # エージェント作成
     try:
-        agent = create_agent()
+        agent = create_agent(database_schema)
         print("[OK] AIエージェントを初期化しました")
     except Exception as e:
         print(f"[ERROR] エージェント初期化エラー: {str(e)}")
