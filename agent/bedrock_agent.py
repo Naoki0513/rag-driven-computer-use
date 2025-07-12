@@ -6,22 +6,22 @@ Strands Agents SDK + Amazon Bedrock を使用して自然言語からCypherク�
 import os
 import sys
 from typing import Optional, Dict, Any
-from dotenv import load_dotenv
 from neo4j import GraphDatabase
+import boto3
 from strands import Agent
 from strands.models import BedrockModel
 from strands.tools import tool
 
-# 環境変数の読み込み
-load_dotenv()
+# 現在のディレクトリをパスに追加
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Neo4j設定
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "testpassword")
+from config import (
+    NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD,
+    AWS_REGION, AWS_BEARER_TOKEN_BEDROCK, BEDROCK_MODEL_ID
+)
 
-# AWS Bedrock設定
-AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
+# グローバルNeo4jマネージャーインスタンス
+neo4j_manager = None
 
 
 class Neo4jManager:
@@ -48,10 +48,6 @@ class Neo4jManager:
         with self.driver.session() as session:
             result = session.run(query)
             return list(result)
-
-
-# グローバルNeo4jマネージャーインスタンス
-neo4j_manager = None
 
 
 @tool(
@@ -136,14 +132,20 @@ def get_database_schema() -> str:
 
 def create_agent() -> Agent:
     """Bedrockモデルを使用するエージェントを作成"""
+    # APIキーが設定されているか確認
+    if not AWS_BEARER_TOKEN_BEDROCK or AWS_BEARER_TOKEN_BEDROCK == "your_api_key_here":
+        print("⚠️  警告: AWS_BEARER_TOKEN_BEDROCKが設定されていません")
+        print("💡 ヒント: agent/config.pyファイルでAPIキーを設定してください")
+    
+    # Strands AgentsのBedrockModelを使用
     model = BedrockModel(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id=BEDROCK_MODEL_ID,
         region=AWS_REGION
     )
     
     agent = Agent(
         name="WebGraph Cypher Agent",
-        instructions="""
+        system_prompt="""
 あなたはNeo4jグラフデータベースの専門家です。
 ユーザーの自然言語の質問を理解し、適切なCypherクエリを生成して実行します。
 
@@ -179,7 +181,7 @@ def run_interactive_mode():
         neo4j_manager = Neo4jManager(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
     except Exception as e:
         print(f"❌ Neo4j接続に失敗しました: {str(e)}")
-        print("💡 ヒント: Neo4jが起動していることを確認し、.envファイルの設定を確認してください")
+        print("💡 ヒント: Neo4jが起動していることを確認し、agent/config.pyファイルの設定を確認してください")
         return
     
     # エージェント作成
@@ -188,7 +190,7 @@ def run_interactive_mode():
         print("✅ AIエージェントを初期化しました")
     except Exception as e:
         print(f"❌ エージェント初期化エラー: {str(e)}")
-        print("💡 ヒント: AWS認証情報が正しく設定されているか確認してください")
+        print("💡 ヒント: AWS_BEARER_TOKEN_BEDROCKが正しく設定されているか確認してください")
         neo4j_manager.close()
         return
     
@@ -197,7 +199,7 @@ def run_interactive_mode():
     print("終了するには 'quit' または 'exit' と入力してください\n")
     
     # 初回スキーマ取得
-    agent.say("データベースのスキーマを確認します...")
+    agent("データベースのスキーマを確認します...")
     
     while True:
         try:
@@ -212,7 +214,7 @@ def run_interactive_mode():
             
             # エージェントに質問を送信
             print("\n🤖 エージェント: ", end="", flush=True)
-            response = agent.say(user_input)
+            response = agent(user_input)
             
         except KeyboardInterrupt:
             print("\n\n👋 中断されました")
@@ -235,13 +237,8 @@ WebGraph-Agent Cypher AI エージェント
 使用方法:
   python agent/bedrock_agent.py
 
-環境変数（.envファイルで設定）:
-  NEO4J_URI: Neo4j接続URI (デフォルト: bolt://localhost:7687)
-  NEO4J_USER: Neo4jユーザー名 (デフォルト: neo4j)
-  NEO4J_PASSWORD: Neo4jパスワード (デフォルト: testpassword)
-  AWS_REGION: AWS Bedrockリージョン (デフォルト: us-west-2)
-  AWS_ACCESS_KEY_ID: AWS アクセスキー
-  AWS_SECRET_ACCESS_KEY: AWS シークレットキー
+設定ファイル:
+  agent/config.py: 全ての設定項目（Neo4j接続情報、AWS Bedrock設定など）
 
 例:
   python agent/bedrock_agent.py

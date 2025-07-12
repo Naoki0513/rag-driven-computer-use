@@ -28,46 +28,42 @@ WebGraph-Agentは2つの主要コンポーネントで構成されています�
 - Bedrock API アクセス権限
 - Claude 3 Sonnet モデルへのアクセス権限
 
-## 🔧 セットアップ
+## セットアップ
 
-### 1. リポジトリのクローン
+### 1. リポジトリをクローン
 ```bash
-git clone https://github.com/yourusername/WebGraph-Agent.git
-cd WebGraph-Agent
+git clone https://github.com/your-username/webgraph-demo.git
+cd webgraph-demo
 ```
 
-### 2. 仮想環境の作成（推奨）
+### 2. Python環境のセットアップ
 ```bash
-# 仮想環境の作成
-python -m venv venv
+# 仮想環境を作成
+python -m venv .venv
 
-# 仮想環境の有効化（Windows）
-venv\Scripts\activate
+# 仮想環境を有効化
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
 
-# 仮想環境の有効化（Linux/Mac）
-source venv/bin/activate
-```
-
-### 3. 依存関係のインストール
-```bash
+# 依存関係をインストール
 pip install -r requirements.txt
-python -m playwright install
 ```
 
-### 4. システム依存関係のインストール（Linux/WSL）
-```bash
-sudo playwright install-deps
-```
+### 3. 設定ファイルの編集
+`agent/config.py` ファイルを編集してNeo4jとAWSの認証情報を設定：
 
-### 5. 環境変数の設定
-```bash
-# .env.exampleをコピー
-cp .env.example .env
+```python
+# Neo4j設定
+NEO4J_URI = "bolt://localhost:7687"
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "your_password"
 
-# .envファイルを編集してNeo4jとAWSの認証情報を設定
-# エディタで .env を開いて以下を設定：
-# - NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
-# - AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# AWS Bedrock設定
+AWS_REGION = "us-west-2"
+AWS_BEARER_TOKEN_BEDROCK = "your_aws_api_key"
+BEDROCK_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
 ```
 
 ## 🚀 使い方
@@ -201,18 +197,18 @@ LIMIT 20
 
 ## ⚙️ 設定
 
-### 環境変数（.envファイル）
+### 設定ファイル（agent/config.py）
 
-```env
-# Neo4j接続情報
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=testpassword
+```python
+# Neo4j設定
+NEO4J_URI = "bolt://localhost:7687"
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "testpassword"
 
 # AWS Bedrock設定
-AWS_REGION=us-west-2
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION = "us-west-2"
+AWS_BEARER_TOKEN_BEDROCK = "your_api_key_here"
+BEDROCK_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
 ```
 
 ### クローラー設定（utilities/crawler.py）

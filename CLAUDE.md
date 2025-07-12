@@ -171,6 +171,44 @@ sudo apt-get install libxslt1.1 libwoff1 libvpx9 libevent-2.1-7t64 \
     libflite1 libgles2 gstreamer1.0-libav
 ```
 
+### Bedrock AIエージェント
+
+#### 概要
+Strands Agents SDKとAmazon Bedrockを使用して、自然言語からNeo4j Cypherクエリを生成・実行するAIエージェントです。
+
+#### 認証方法（Bedrock API Key使用）
+
+1. **Bedrock API Keyの取得**
+   - AWS Management ConsoleでAmazon Bedrockサービスへアクセス
+   - 左側メニューの「API Keys」を選択
+   - 「Generate long-term API Keys」または「Generate short-term API Keys」をクリック
+   - API Keyをダウンロード（CSVファイル）
+
+2. **環境変数の設定**
+   ```bash
+   # .envファイルに追加
+   AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-xxxxx
+   AWS_REGION=us-west-2  # API Keyを作成したリージョン
+   
+   # または環境変数として設定
+   export AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-xxxxx
+   ```
+
+3. **実行**
+   ```bash
+   # 仮想環境の有効化
+   source .uv_venv/bin/activate
+   
+   # エージェントの起動
+   python agent/bedrock_agent.py
+   ```
+
+#### 注意事項
+- Long-term API Key: 12時間以上の有効期限（開発・テスト用推奨）
+- Short-term API Key: 12時間で期限切れ（より安全）
+- API KeyはIAMアクセスキーより簡単に管理できます
+- 本番環境では定期的にキーをローテーションすることを推奨
+
 ### コマンド実行
 
 #### 重要：仮想環境の有効化

@@ -30,7 +30,7 @@ NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 
 TARGET_URL = "https://example.com"  # 引数で上書き可
-LOGIN_USER = "your_id"              # .env or 引数
+LOGIN_USER = "your_id"              # 引数で設定
 LOGIN_PASS = "your_pass"
 MAX_STATES = 10000                  # 安全停止上限（大幅に増加）
 MAX_DEPTH = 20                      # 探索深度（大幅に増加）

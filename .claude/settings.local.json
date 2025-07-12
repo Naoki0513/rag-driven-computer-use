@@ -24,8 +24,13 @@
       "Bash(test_venv/bin/python -m pytest -v)",
       "Bash(./test_venv/bin/python -m pytest -v)",
       "Bash(./test_venv/bin/pytest -v)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(echo $WSLENV)",
+      "Bash(env)"
     ],
-    "deny": []
+    "deny": [
+      "Read(file_path:*.env)",
+      "Read(file_path:.env)"
+    ]
   }
 }
