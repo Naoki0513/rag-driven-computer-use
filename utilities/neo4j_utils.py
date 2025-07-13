@@ -10,9 +10,9 @@ class Neo4jManager:
             # 接続テスト
             with self.driver.session() as session:
                 session.run("RETURN 1")
-            print(f"✅ Neo4jに接続しました: {uri}")
+            print(f"[OK] Neo4jに接続しました: {uri}")
         except Exception as e:
-            print(f"❌ Neo4j接続エラー: {str(e)}")
+            print(f"[ERROR] Neo4j接続エラー: {str(e)}")
             raise
     
     def close(self):

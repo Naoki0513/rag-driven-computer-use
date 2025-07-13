@@ -13,6 +13,9 @@ from agent.prompt import create_system_prompt
 # グローバルNeo4jマネージャーインスタンス
 neo4j_manager = None
 
+# システムプロンプトの初回表示フラグ
+_system_prompt_shown = False
+
 def get_database_schema(neo4j_manager: Neo4jManager) -> str:
     """データベースのスキーマ情報を取得"""
     try:
@@ -64,6 +67,20 @@ def get_database_schema(neo4j_manager: Neo4jManager) -> str:
 
 def create_agent(database_schema: str = "") -> Agent:
     """Bedrockモデルを使用するエージェントを作成"""
+    global _system_prompt_shown
+    
+    # システムプロンプトを生成
+    system_prompt = create_system_prompt(database_schema)
+    
+    # 初回のみシステムプロンプトをログ出力
+    if not _system_prompt_shown:
+        print("\n[システムプロンプト（初回のみ表示）]")
+        print("=" * 80)
+        print(system_prompt)
+        print("=" * 80)
+        print()
+        _system_prompt_shown = True
+    
     # Strands AgentsのBedrockModelを使用（AWS認証は環境変数から自動取得）
     model = BedrockModel(
         model_id=BEDROCK_MODEL_ID,
@@ -72,7 +89,7 @@ def create_agent(database_schema: str = "") -> Agent:
     
     agent = Agent(
         name="WebGraph Cypher Agent",
-        system_prompt=create_system_prompt(database_schema),
+        system_prompt=system_prompt,
         model=model,
         tools=[run_cypher]
     )
