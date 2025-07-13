@@ -5,7 +5,6 @@ from agent.config import (
     AWS_REGION, BEDROCK_MODEL_ID
 )
 from utilities.neo4j_utils import Neo4jManager
-from agent import tools
 from agent.tools import run_cypher
 from agent.prompt import create_system_prompt
 
@@ -17,6 +16,34 @@ neo4j_manager = None
 
 # システムプロンプトの初回表示フラグ
 _system_prompt_shown = False
+
+def add_cache_points(messages: List[Dict[str, Any]], is_claude: bool, is_nova: bool) -> List[Dict[str, Any]]:
+    if not (is_claude or is_nova):
+        return messages
+    
+    max_points = 2 if is_claude else 3 if is_nova else 0
+    messages_with_cache = []
+    user_turns_processed = 0
+    
+    for message in reversed(messages):
+        m = copy.deepcopy(message)
+        if m["role"] == "user" and user_turns_processed < max_points:
+            append_cache = False
+            if is_claude:
+                append_cache = True
+            elif is_nova:
+                has_text = any(isinstance(c, dict) and "text" in c for c in m.get("content", []))
+                if has_text:
+                    append_cache = True
+            if append_cache:
+                if not isinstance(m["content"], list):
+                    m["content"] = [{"text": m["content"]}]
+                m["content"].append({"cachePoint": {"type": "default"}})
+                user_turns_processed += 1
+        messages_with_cache.append(m)
+    
+    messages_with_cache.reverse()
+    return messages_with_cache
 
 def get_database_schema(neo4j_manager: Neo4jManager) -> str:
     """データベースのスキーマ情報を取得"""
@@ -82,34 +109,6 @@ def create_system_prompt_with_schema(database_schema: str = "") -> str:
     
     return system_prompt
 
-def add_cache_points(messages: List[Dict[str, Any]], is_claude: bool, is_nova: bool) -> List[Dict[str, Any]]:
-    if not (is_claude or is_nova):
-        return messages
-    
-    max_points = 2 if is_claude else 3 if is_nova else 0
-    messages_with_cache = []
-    user_turns_processed = 0
-    
-    for message in reversed(messages):
-        m = copy.deepcopy(message)
-        if m["role"] == "user" and user_turns_processed < max_points:
-            append_cache = False
-            if is_claude:
-                append_cache = True
-            elif is_nova:
-                has_text = any(isinstance(c, dict) and "text" in c for c in m.get("content", []))
-                if has_text:
-                    append_cache = True
-            if append_cache:
-                if not isinstance(m["content"], list):
-                    m["content"] = [{"text": m["content"]}]
-                m["content"].append({"cachePoint": {"type": "default"}})
-                user_turns_processed += 1
-        messages_with_cache.append(m)
-    
-    messages_with_cache.reverse()
-    return messages_with_cache
-
 def run_single_query(query: str):
     global neo4j_manager
     
@@ -118,6 +117,7 @@ def run_single_query(query: str):
     try:
         print(f"Neo4jに接続中... URI: {NEO4J_URI}, User: {NEO4J_USER}")
         neo4j_manager = Neo4jManager(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+        from agent import tools
         tools.neo4j_manager = neo4j_manager
         print("[OK] Neo4j接続に成功しました")
     except Exception as e:
@@ -145,7 +145,7 @@ def run_single_query(query: str):
     print(f"\n実行中のクエリ: {query}")
     print("\nエージェント: ", end="", flush=True)
     
-    # Prepare system
+    # System prompt
     system = [{"text": system_prompt}]
     lower_id = BEDROCK_MODEL_ID.lower()
     is_cache_supported = 'claude' in lower_id or 'nova' in lower_id
@@ -198,7 +198,8 @@ def run_single_query(query: str):
                 modelId=BEDROCK_MODEL_ID,
                 messages=current_messages,
                 system=system,
-                toolConfig=tool_config
+                toolConfig=tool_config,
+                inferenceConfig={"maxTokens": 4096, "temperature": 0.5}
             )
             
             usage = response['usage']
@@ -239,6 +240,9 @@ def run_single_query(query: str):
                 
                 if tool_results:
                     messages.append({"role": "user", "content": tool_results})
+            elif stop_reason == 'max_tokens':
+                print("\n最大トークン数に達しました。応答が途切れている可能性があります。")
+                break
             else:
                 print(f"\n未知のstop_reason: {stop_reason}")
                 break
@@ -253,6 +257,7 @@ def run_single_query(query: str):
     print(f"- 総出力トークン数: {total_output}")
     print(f"- 総キャッシュ読み取りトークン数: {total_cache_read}")
     print(f"- 総キャッシュ書き込みトークン数: {total_cache_write}")
+    print(f"- 総トークン数: {total_input + total_output}")
     
     if neo4j_manager:
         neo4j_manager.close()

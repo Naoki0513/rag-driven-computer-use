@@ -1,14 +1,9 @@
 from typing import Optional, Dict, Any
-from strands.tools import tool
 from utilities.neo4j_utils import Neo4jManager
 
 # グローバルNeo4jマネージャーインスタンス（後で初期化）
 neo4j_manager: Optional[Neo4jManager] = None
 
-@tool(
-    name="run_cypher",
-    description="Neo4jデータベースに対してCypherクエリを実行します"
-)
 def run_cypher(query: str) -> str:
     """
     Neo4jでCypherクエリを実行
