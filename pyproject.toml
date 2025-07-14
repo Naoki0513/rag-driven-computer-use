@@ -53,8 +53,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "strands-agents>=0.2.1",
-    "strands-agents-tools>=0.1.8",
     "neo4j>=5.24.0",
     "python-dotenv>=1.0.1",
     "playwright==1.47.0",
@@ -74,4 +72,4 @@ dev = [
 ]
 
 [project.scripts]
-webgraph-agent = "agent.bedrock_agent:main"
+webgraph-agent = "agent.bedrock:main"

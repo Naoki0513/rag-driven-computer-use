@@ -29,9 +29,9 @@ NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 
-TARGET_URL = "https://example.com"  # 引数で上書き可
-LOGIN_USER = "your_id"              # 引数で設定
-LOGIN_PASS = "your_pass"
+TARGET_URL = "http://the-agent-company.com:3000/home"  # 引数で上書き可
+LOGIN_USER = "theagentcompany"              # 引数で設定
+LOGIN_PASS = "theagentcompany"
 MAX_STATES = 10000                  # 安全停止上限（大幅に増加）
 MAX_DEPTH = 20                      # 探索深度（大幅に増加）
 PARALLEL_TASKS = 8                  # await asyncio.Semaphore で制御
@@ -155,6 +155,7 @@ class WebCrawler:
             await self._login(page)
             
             # 初期状態をキャプチャ
+            await page.wait_for_timeout(5000)  # 追加待機
             initial_state = await self._capture_state(page, "home")
             await self._save_state(initial_state)
             self.queue.append(QueueItem(initial_state, 0))
@@ -184,6 +185,7 @@ class WebCrawler:
                 
                 # ページに移動
                 await page.goto(current_item.state.url, wait_until='networkidle')
+                await page.wait_for_timeout(5000)  # 追加待機
                 
                 # インタラクション要素を探す
                 interactions = await self._find_interactions(page)
@@ -232,11 +234,14 @@ class WebCrawler:
     async def _login(self, page: Page):
         """ログイン処理"""
         # まずベースURLにアクセス
-        await page.goto(self.config['target_url'])
+        await page.goto(self.config['target_url'], wait_until='load', timeout=60000)
         
         # ページが完全に読み込まれるまで待機
-        await page.wait_for_load_state('networkidle')
-        await page.wait_for_timeout(2000)  # 動的コンテンツのための追加待機
+        try:
+            await page.wait_for_load_state('networkidle', timeout=10000)
+        except PlaywrightTimeoutError:
+            logger.info("networkidleタイムアウト、継続します")
+        await page.wait_for_timeout(5000)  # 動的コンテンツのための追加待機
         
         current_url = page.url
         logger.info(f"現在のURL: {current_url}")
@@ -437,6 +442,10 @@ class WebCrawler:
             
             for element in elements:
                 try:
+                    # 可視性と有効性を確認
+                    if not (await element.is_visible() and await element.is_enabled()):
+                        continue
+                    
                     # 要素情報取得
                     text = await element.text_content() or ''
                     text = text.strip()[:50]
@@ -481,9 +490,9 @@ class WebCrawler:
                         action_type=action_type,
                         href=href
                     )
-                    
+                        
                     interactions.append(interaction)
-                    
+                        
                 except Exception as e:
                     logger.debug(f"要素情報取得エラー: {e}")
                     continue
@@ -518,8 +527,8 @@ class WebCrawler:
                     
                 else:
                     # クリック
-                    element = await new_page.query_selector(interaction.selector)
-                    if element:
+                    element = await new_page.wait_for_selector(interaction.selector, state='visible', timeout=10000)
+                    if element and await element.is_enabled():
                         await element.click()
                         await new_page.wait_for_load_state('networkidle')
                     else:

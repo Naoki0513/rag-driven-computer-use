@@ -73,8 +73,11 @@ BEDROCK_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
 Neo4jデータベースに対して自然言語でクエリを実行できます：
 
 ```bash
-# AIエージェントを起動
-python agent/bedrock_agent.py
+# AIエージェントを起動してクエリを実行
+python main.py "<クエリ>"
+
+例:
+python main.py "ノード数を教えて"
 ```
 
 対話例：
@@ -207,8 +210,7 @@ NEO4J_PASSWORD = "testpassword"
 
 # AWS Bedrock設定
 AWS_REGION = "us-west-2"
-AWS_BEARER_TOKEN_BEDROCK = "your_api_key_here"
-BEDROCK_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
+BEDROCK_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 ```
 
 ### クローラー設定（utilities/crawler.py）
@@ -234,7 +236,7 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 ### AIエージェント関連
 
 #### AWS認証エラー
-- AWS認証情報が正しく設定されているか確認
+- AWS認証情報が正しく設定されているか確認（AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEYなどの環境変数）
 - AWS CLIがインストールされている場合は `aws configure` で設定確認
 - Bedrockへのアクセス権限があるか確認
 
@@ -284,3 +286,33 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 ## 📞 サポート
 
 問題が発生した場合は、GitHubのissueを作成してください。
+
+## クローラー修正のナレッジ
+
+crawler.pyの実行が途中で止まる問題の原因と修正:
+
+### 問題の原因
+- ページ遷移後、要素が完全に利用可能になる前にクリックしようとするため、インタラクションが失敗する。
+- ログイン処理でのタイムアウトや要素検出のタイミングの問題。
+
+### 修正内容
+1. **_find_interactionsメソッド**:
+   - 要素の可視性(is_visible())と有効性(is_enabled())を確認して、利用可能な要素のみを対象とする。
+
+2. **_process_interactionメソッド**:
+   - wait_for_selectorを使って要素がvisibleになるまで待機(タイムアウト10秒)。
+   - クリック前にis_enabled()を確認。
+
+3. **_loginメソッド**:
+   - gotoのwait_untilを'load'に設定し、タイムアウトを60秒に。
+   - networkidleの待機をtry-exceptでハンドルし、タイムアウト時は継続。
+   - 追加のwait_for_timeout(5000)を挿入。
+
+4. **runメソッド**:
+   - 初期状態キャプチャ前にwait_for_timeout(5000)を追加。
+   - ページ移動後にwait_for_timeout(5000)を追加。
+
+### 結果
+- これらの修正により、ノード26個、エッジ162個のグラフを正常に生成。
+
+詳細はutilities/crawler.pyを参照。

@@ -58,10 +58,19 @@ def get_database_schema(neo4j_manager: Neo4jManager) -> str:
         relationships = neo4j_manager.execute_cypher(rel_query)
         rel_list = [record['relationshipType'] for record in relationships]
         
-        # プロパティキーの取得
-        prop_query = "CALL db.propertyKeys() YIELD propertyKey RETURN propertyKey"
-        properties = neo4j_manager.execute_cypher(prop_query)
-        prop_list = [record['propertyKey'] for record in properties[:20]]  # 最大20件
+        # 各ノードラベルごとのプロパティキー取得
+        node_props = {}
+        for label in label_list:
+            prop_query = f"MATCH (n:{label}) UNWIND keys(n) AS key RETURN DISTINCT key"
+            props = neo4j_manager.execute_cypher(prop_query)
+            node_props[label] = [record['key'] for record in props]
+        
+        # 各リレーションシップタイプごとのプロパティキー取得
+        rel_props = {}
+        for rel_type in rel_list:
+            prop_query = f"MATCH ()-[r:{rel_type}]->() UNWIND keys(r) AS key RETURN DISTINCT key"
+            props = neo4j_manager.execute_cypher(prop_query)
+            rel_props[rel_type] = [record['key'] for record in props]
         
         # 各ノードラベルのノード数を取得
         node_counts = []
@@ -69,7 +78,7 @@ def get_database_schema(neo4j_manager: Neo4jManager) -> str:
             count_query = f"MATCH (n:{label}) RETURN count(n) as count"
             result = neo4j_manager.execute_cypher(count_query)
             if result:
-                node_counts.append(f"  - {label}: {result[0]['count']}ノード")
+                node_counts.append(f"  - {label}: {result[0]['count']}ノード (プロパティ: {', '.join(node_props.get(label, []))})")
         
         # 各リレーションシップタイプの数を取得
         rel_counts = []
@@ -77,7 +86,7 @@ def get_database_schema(neo4j_manager: Neo4jManager) -> str:
             count_query = f"MATCH ()-[r:{rel_type}]->() RETURN count(r) as count"
             result = neo4j_manager.execute_cypher(count_query)
             if result:
-                rel_counts.append(f"  - {rel_type}: {result[0]['count']}件")
+                rel_counts.append(f"  - {rel_type}: {result[0]['count']}件 (プロパティ: {', '.join(rel_props.get(rel_type, []))})")
         
         schema_info = f"""
 データベーススキーマ情報:
@@ -86,8 +95,6 @@ def get_database_schema(neo4j_manager: Neo4jManager) -> str:
 
 - リレーションシップタイプ: {', '.join(rel_list) if rel_list else 'なし'}
 {chr(10).join(rel_counts) if rel_counts else ''}
-
-- プロパティキー（一部）: {', '.join(prop_list) if prop_list else 'なし'}
 """
         return schema_info
         

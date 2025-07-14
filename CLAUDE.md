@@ -58,29 +58,29 @@ python utilities\crawler.py --url https://example.com --depth 5 --limit 100 --pa
 - `--headful`: ブラウザ表示モード
 - `--no-clear`: 既存データを保持
 
-#### 2. agent\bedrock_agent.py
+#### 2. agent\bedrock.py
 Amazon Bedrockを使用した自然言語からCypherクエリを生成するAIエージェント。
 
 環境変数設定（.envファイルまたはPowerShell）:
 ```powershell
-$env:AWS_BEARER_TOKEN_BEDROCK = "bedrock-api-key-xxxxx"
 $env:AWS_REGION = "us-west-2"
 ```
 
 ### インストール済みパッケージ（requirements.txt）
-- strands-agents>=0.2.1
-- strands-agents-tools>=0.1.8
 - neo4j>=5.24.0
 - python-dotenv>=1.0.1
-- playwright==1.47.0
 - pytest>=8.2.0
+- pytest-asyncio>=0.21.0
+- playwright==1.47.0
 - requests>=2.31.0
+- boto3>=1.39.3
 
 ### トラブルシューティング
 
 1. **Windows Defenderによるブロック**: ブラウザー起動時に発生する場合は除外設定を追加
 2. **PowerShell実行ポリシー**: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
-3. **Playwrightクラッシュ**: `python -m playwright install --force`で再インストール
+3. **Playwr
+ightクラッシュ**: `python -m playwright install --force`で再インストール
 
 ### Neo4jクエリ例
 
