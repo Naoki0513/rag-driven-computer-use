@@ -29,7 +29,7 @@ NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 
-TARGET_URL = "http://the-agent-company.com:3000/home"  # 引数で上書き可
+TARGET_URL = "http://the-agent-company.com:3000/"  # 引数で上書き可
 LOGIN_USER = "theagentcompany"              # 引数で設定
 LOGIN_PASS = "theagentcompany"
 MAX_STATES = 10000                  # 安全停止上限（大幅に増加）
@@ -60,6 +60,9 @@ class Interaction:
     text: str
     action_type: str  # click or navigate
     href: Optional[str] = None
+    role: Optional[str] = None
+    name: Optional[str] = None
+    ref_id: Optional[str] = None
 
 
 @dataclass
@@ -77,6 +80,9 @@ class StateTransition(NamedTuple):
     aria_context: str
     element_selector: str
     element_text: str
+    role: str
+    name: str
+    ref_id: str
 
 
 class WebCrawler:
@@ -351,13 +357,12 @@ class WebCrawler:
         # HTMLサイズ制限
         if len(html.encode('utf-8')) > MAX_HTML_SIZE:
             html = html[:MAX_HTML_SIZE]
-            
+        
         # ARIA snapshot取得
         aria_snapshot = await self._get_aria_snapshot(page)
         
-        # ハッシュ生成
-        hash_input = f"{url}{title}{state_type}"
-        state_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+        # ハッシュ生成 - URLベースで同じURLは同じノードとして扱う
+        state_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
         
         # タイムスタンプ
         timestamp = datetime.now().isoformat()
@@ -368,11 +373,11 @@ class WebCrawler:
             title=title,
             state_type=state_type,
             html=html,
-            aria_snapshot=json.dumps(aria_snapshot),
+            aria_snapshot=json.dumps(aria_snapshot, ensure_ascii=False),
             timestamp=timestamp
         )
         
-    async def _get_aria_snapshot(self, page: Page) -> Dict[str, Any]:
+    async def _get_aria_snapshot(self, page: Page) -> List[Dict[str, Any]]:
         """ARIA snapshotを取得"""
         return await page.evaluate('''
             () => {
@@ -383,12 +388,10 @@ class WebCrawler:
                     if (depth > maxDepth) return null;
                     
                     const data = {
-                        tag: el.tagName.toLowerCase(),
                         role: el.getAttribute('role'),
-                        ariaLabel: el.getAttribute('aria-label'),
-                        dataQa: el.getAttribute('data-qa'),
-                        href: el.getAttribute('href'),
-                        text: el.textContent?.slice(0, 100)
+                        name: el.getAttribute('aria-label') || el.getAttribute('name') || el.textContent?.slice(0, 100),
+                        ref_id: el.getAttribute('id') || el.getAttribute('data-qa') || null,
+                        href: el.getAttribute('href')
                     };
                     
                     // 空の値を除去
@@ -412,91 +415,53 @@ class WebCrawler:
         
     async def _find_interactions(self, page: Page) -> List[Interaction]:
         """インタラクション可能な要素を検出"""
-        selectors = [
-            'a[href]',
-            'button',
-            '[role="button"]',
-            '[role="tab"]',
-            '[role="link"]',
-            '[onclick]',
-            '.clickable',
-            '[data-qa*="button"]',
-            '[data-qa*="link"]',
-            '[data-qa*="sidebar"]',
-            '.sidebar a[href*="/channel/"]',
-            '.sidebar a[href*="/direct/"]',
-            '.rc-room-header button',
-            '.sidebar-item__menu',
-            'input[type="submit"]',
-            'input[type="button"]',
-            '[aria-haspopup]',
-            '.nav-link',
-            '.menu-item',
-            '.dropdown-item'
-        ]
+        interactive_elements = await page.evaluate('''
+            () => {
+                const elements = [];
+                const candidates = document.querySelectorAll('a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="button"], input[type="submit"]');
+                candidates.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0 && el.offsetParent !== null) {
+                        const data = {
+                            tag: el.tagName.toLowerCase(),
+                            role: el.getAttribute('role') || el.tagName.toLowerCase(),
+                            href: el.getAttribute('href') || null,
+                            text: (el.textContent || '').trim().slice(0, 100) || el.getAttribute('aria-label') || el.getAttribute('title') || 'unnamed',
+                            id: el.id || null,
+                            name: el.getAttribute('name') || el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 50) || 'unnamed'
+                        };
+                        // ref_idがない場合は生成
+                        if (!data.id) {
+                            data.id = 'auto_' + Math.random().toString(36).substr(2, 9);
+                            el.id = data.id;
+                        }
+                        elements.push(data);
+                    }
+                });
+                return elements.slice(0, 100); // Limit to 100 to avoid overload
+            }
+        ''')
         
         interactions = []
-        
-        for selector in selectors:
-            elements = await page.query_selector_all(selector)
+        for item in interactive_elements:
+            # ref_idベースのセレクターを使用
+            if not item.get('id'):
+                continue
             
-            for element in elements:
-                try:
-                    # 可視性と有効性を確認
-                    if not (await element.is_visible() and await element.is_enabled()):
-                        continue
-                    
-                    # 要素情報取得
-                    text = await element.text_content() or ''
-                    text = text.strip()[:50]
-                    
-                    href = await element.get_attribute('href')
-                    tag_name = await element.evaluate('el => el.tagName.toLowerCase()')
-                    
-                    # selectorを生成
-                    element_selector = await element.evaluate('''
-                        el => {
-                            // data-qa属性を優先
-                            const dataQa = el.getAttribute('data-qa');
-                            if (dataQa) return `[data-qa="${dataQa}"]`;
-                            
-                            // href属性がある場合
-                            const href = el.getAttribute('href');
-                            if (href) return `[href="${href}"]`;
-                            
-                            // IDを使用
-                            if (el.id) return '#' + el.id;
-                            
-                            // クラス名を使用
-                            if (el.className && typeof el.className === 'string') {
-                                const firstClass = el.className.split(' ')[0];
-                                if (firstClass) return '.' + firstClass;
-                            }
-                            
-                            // タグ名をフォールバック
-                            return el.tagName.toLowerCase();
-                        }
-                    ''')
-                    
-                    # アクションタイプ決定
-                    if tag_name == 'a' and href:
-                        action_type = 'navigate'
-                    else:
-                        action_type = 'click'
-                        
-                    interaction = Interaction(
-                        selector=element_selector,
-                        text=text,
-                        action_type=action_type,
-                        href=href
-                    )
-                        
-                    interactions.append(interaction)
-                        
-                except Exception as e:
-                    logger.debug(f"要素情報取得エラー: {e}")
-                    continue
-                    
+            action_type = 'navigate' if item.get('tag') == 'a' or item.get('href') else 'click'
+            selector = f"#{item['id']}"
+            
+            interactions.append(Interaction(
+                selector=selector,
+                text=item.get('text', 'unnamed'),
+                action_type=action_type,
+                href=item.get('href'),
+                role=item.get('role', 'unknown'),
+                name=item.get('name', 'unnamed'),
+                ref_id=item.get('id')
+            ))
+        
+        logger.info(f"Found {len(interactions)} interactions in page")
         return interactions
         
     async def _process_interaction(
@@ -527,7 +492,7 @@ class WebCrawler:
                     
                 else:
                     # クリック
-                    element = await new_page.wait_for_selector(interaction.selector, state='visible', timeout=10000)
+                    element = await new_page.wait_for_selector(interaction.selector, state='visible', timeout=20000)
                     if element and await element.is_enabled():
                         await element.click()
                         await new_page.wait_for_load_state('networkidle')
@@ -538,11 +503,12 @@ class WebCrawler:
                 new_state_type = await self._detect_state_type(new_page)
                 new_state = await self._capture_state(new_page, new_state_type)
                 
-                # ARIA context抽出
+                # ARIA context抽出 - nullを避ける
                 aria_context = json.dumps({
-                    'selector': interaction.selector,
-                    'text': interaction.text
-                })[:MAX_ARIA_CONTEXT_SIZE]
+                    'role': interaction.role or 'unknown',
+                    'name': interaction.name or 'unnamed', 
+                    'ref_id': interaction.ref_id or 'no_id'
+                }, ensure_ascii=False)[:MAX_ARIA_CONTEXT_SIZE]
                 
                 # 遷移情報作成
                 transition = StateTransition(
@@ -551,7 +517,10 @@ class WebCrawler:
                     action_type=interaction.action_type,
                     aria_context=aria_context,
                     element_selector=interaction.selector,
-                    element_text=interaction.text
+                    element_text=interaction.text,
+                    role=interaction.role or 'unknown',
+                    name=interaction.name or 'unnamed',
+                    ref_id=interaction.ref_id or 'no_id'
                 )
                 
                 # データベースに保存
@@ -635,14 +604,20 @@ class WebCrawler:
                 }]->(to)
                 SET t.action_type = $action_type,
                     t.aria_context = $aria_context,
-                    t.element_text = $element_text
+                    t.element_text = $element_text,
+                    t.role = $role,
+                    t.name = $name,
+                    t.ref_id = $ref_id
                 """,
                 from_hash=transition.from_hash,
                 to_hash=transition.to_hash,
                 action_type=transition.action_type,
                 aria_context=transition.aria_context,
                 element_selector=transition.element_selector,
-                element_text=transition.element_text
+                element_text=transition.element_text,
+                role=transition.role,
+                name=transition.name,
+                ref_id=transition.ref_id
             )
             
     async def _gather_with_semaphore(self, tasks: List) -> List:
