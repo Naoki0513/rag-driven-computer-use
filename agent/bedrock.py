@@ -10,6 +10,8 @@ from agent.prompt import create_system_prompt
 
 import copy
 from typing import List, Dict, Any
+import time
+import botocore.exceptions
 
 # グローバルNeo4jマネージャーインスタンス
 neo4j_manager = None
@@ -201,13 +203,31 @@ def run_single_query(query: str):
         while True:
             current_messages = add_cache_points(messages, is_claude, is_nova)
             
-            response = client.converse(
-                modelId=BEDROCK_MODEL_ID,
-                messages=current_messages,
-                system=system,
-                toolConfig=tool_config,
-                inferenceConfig={"maxTokens": 4096, "temperature": 0.5}
-            )
+            max_retries = 3
+            retry_delay = 15  # 秒
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    response = client.converse(
+                        modelId=BEDROCK_MODEL_ID,
+                        messages=current_messages,
+                        system=system,
+                        toolConfig=tool_config,
+                        inferenceConfig={"maxTokens": 4096, "temperature": 0.5}
+                    )
+                    break
+                except botocore.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == 'ThrottlingException':
+                        if attempt == max_retries:
+                            raise
+                        print(f"Throttlingエラーが発生しました。{retry_delay}秒待機してリトライします... (試行 {attempt + 1}/{max_retries + 1})")
+                        time.sleep(retry_delay)
+                    else:
+                        # RPM/TPM関連以外のエラーはすぐに終了
+                        raise
+                except Exception as e:
+                    # その他の例外もすぐに終了
+                    raise
             
             usage = response['usage']
             total_input += usage['inputTokens']
