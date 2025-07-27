@@ -19,7 +19,6 @@ from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from neo4j import AsyncGraphDatabase, AsyncSession
 
-
 # ロガー設定
 logger = logging.getLogger(__name__)
 
@@ -51,6 +50,7 @@ class PageState:
     html: str
     aria_snapshot: str
     timestamp: str
+    visited_hash: str
 
 
 @dataclass
@@ -66,23 +66,43 @@ class Interaction:
 
 
 @dataclass
-class QueueItem:
-    """BFSキューのアイテム"""
-    state: PageState
-    depth: int
+class PageNode:
+    hash: str
+    url: str
+    title: str
+    template_id: str
+    aria_yaml: str
+    dom_hash: str
+    embedding: str = ""
 
-
-class StateTransition(NamedTuple):
-    """状態遷移を表すタプル"""
-    from_hash: str
-    to_hash: str
-    action_type: str
-    aria_context: str
-    element_selector: str
-    element_text: str
+@dataclass
+class ElementNode:
+    element_id: str
     role: str
     name: str
-    ref_id: str
+    selector: str
+    bbox: str  # JSON文字列
+    action_types: List[str]
+    visibility: bool
+
+@dataclass
+class FormNode:
+    form_id: str
+    method: str
+    action: str
+    required_fields: List[str]
+
+@dataclass
+class SessionStateNode:
+    auth: bool
+    cookies: str  # JSON
+    query_params: str  # JSON
+
+@dataclass
+class QueueItem:
+    """BFSキューのアイテム"""
+    page: PageNode
+    depth: int
 
 
 class WebCrawler:
@@ -97,6 +117,7 @@ class WebCrawler:
         self.queue: List[QueueItem] = []
         self.semaphore = asyncio.Semaphore(config['parallel_tasks'])
         self.playwright = None
+        self.session_state: Optional[SessionStateNode] = None
         
     async def __aenter__(self):
         """非同期コンテキストマネージャーのエントリー"""
@@ -151,6 +172,11 @@ class WebCrawler:
                 "CREATE INDEX transition_key IF NOT EXISTS "
                 "FOR ()-[t:TRANSITION]-() ON (t.element_selector)"
             )
+            # 新インデックス
+            await session.run("CREATE INDEX page_hash IF NOT EXISTS FOR (p:Page) ON (p.hash)")
+            await session.run("CREATE INDEX element_id IF NOT EXISTS FOR (e:Element) ON (e.element_id)")
+            await session.run("CREATE INDEX form_id IF NOT EXISTS FOR (f:Form) ON (f.form_id)")
+            await session.run("CREATE INDEX state_auth IF NOT EXISTS FOR (s:SessionState) ON (s.auth)")
             
     async def run(self):
         """メインクロール処理"""
@@ -160,14 +186,33 @@ class WebCrawler:
             # ログイン処理
             await self._login(page)
             
-            # 初期状態をキャプチャ
-            await page.wait_for_timeout(5000)  # 追加待機
-            initial_state = await self._capture_state(page, "home")
-            await self._save_state(initial_state)
-            self.queue.append(QueueItem(initial_state, 0))
-            self.visited_states.add(initial_state.hash)
+            # セッション状態作成
+            self.session_state = await self._capture_session_state(page)
+            await self._save_session_state(self.session_state)
             
-            # BFSループ
+            initial_page = await self._capture_page(page)
+            await self._save_page(initial_page)
+            await self._link_session_to_page(self.session_state, initial_page)
+            
+            # 要素とフォーム抽出・保存
+            elements = await self._extract_elements(page, initial_page.aria_yaml)
+            for el in elements:
+                await self._save_element(el)
+                await self._link_page_to_element(initial_page, el)
+            forms = await self._extract_forms(page)
+            for form in forms:
+                await self._save_form(form)
+                # フォームフィールドリンク (簡易)
+                for field in form.required_fields:
+                    # 仮定: fieldがselector
+                    dummy_el = ElementNode(field, 'input', 'field', field, json.dumps({}), ['fill'], True)
+                    await self._save_element(dummy_el)
+                    await self._link_form_to_field(form, dummy_el)
+            
+            self.queue.append(QueueItem(initial_page, 0))
+            self.visited_states.add(initial_page.hash)  # hashで訪問管理
+            
+            # BFSループ (調整)
             visited_count = 1
             exhaustive = self.config.get('exhaustive', False)
             
@@ -185,32 +230,33 @@ class WebCrawler:
                     
                 logger.info(
                     f"[{visited_count}/{self.config['max_states']}] "
-                    f"Processing: {current_item.state.state_type} - "
-                    f"{current_item.state.url} (depth {current_item.depth})"
+                    f"Processing: {current_item.page.title} - "
+                    f"{current_item.page.url} (depth {current_item.depth})"
                 )
                 
                 # ページに移動
-                await page.goto(current_item.state.url, wait_until='networkidle')
+                await page.goto(current_item.page.url, wait_until='networkidle')
                 await page.wait_for_timeout(5000)  # 追加待機
                 
                 # インタラクション要素を探す
-                interactions = await self._find_interactions(page)
+                # interactions = await self._find_interactions(page)
+                interactions = await self._interactions_from_snapshot(current_item.page.aria_yaml)
                 
                 # 並列処理でインタラクションを実行
                 tasks = []
                 for interaction in interactions[:50]:  # 各ページ最大50個
                     task = self._process_interaction(
-                        page, current_item.state, interaction, current_item.depth
+                        page, current_item.page, interaction, current_item.depth
                     )
                     tasks.append(task)
                     
                 results = await self._gather_with_semaphore(tasks)
                 
                 # 新しい状態をキューに追加
-                for new_state, transition in results:
-                    if new_state and new_state.hash not in self.visited_states:
-                        self.visited_states.add(new_state.hash)
-                        self.queue.append(QueueItem(new_state, current_item.depth + 1))
+                for new_page_node, transition in results:
+                    if new_page_node and new_page_node.hash not in self.visited_states:
+                        self.visited_states.add(new_page_node.hash)
+                        self.queue.append(QueueItem(new_page_node, current_item.depth + 1))
                         visited_count += 1
                         
         except Exception as e:
@@ -224,13 +270,13 @@ class WebCrawler:
         # 統計情報を表示
         async with self.neo4j_driver.session() as session:
             result = await session.run(
-                "MATCH (s:State) RETURN count(s) as nodeCount"
+                "MATCH (p:Page) RETURN count(p) as nodeCount"
             )
             record = await result.single()
             node_count = record['nodeCount']
             
             result = await session.run(
-                "MATCH ()-[t:TRANSITION]->() RETURN count(t) as edgeCount"
+                "MATCH ()-[r]->() RETURN count(r) as edgeCount"
             )
             record = await result.single()
             edge_count = record['edgeCount']
@@ -345,7 +391,7 @@ class WebCrawler:
         else:
             logger.info("ログインフォームが見つかりません、継続します")
             
-    async def _capture_state(self, page: Page, state_type: str) -> PageState:
+    async def _capture_page(self, page: Page) -> PageNode:
         """ページ状態をキャプチャ"""
         await page.wait_for_load_state('networkidle')
         
@@ -359,22 +405,28 @@ class WebCrawler:
             html = html[:MAX_HTML_SIZE]
         
         # ARIA snapshot取得
-        aria_snapshot = await self._get_aria_snapshot(page)
+        snapshot = await self._get_aria_snapshot(page)
+        aria_yaml = json.dumps(snapshot, ensure_ascii=False)  # JSONとして格納
         
-        # ハッシュ生成 - URLベースで同じURLは同じノードとして扱う
-        state_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        # ノードハッシュ - URLベース
+        node_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        # 訪問済みチェック用ハッシュ - コンテンツベース
+        visited_hash = hashlib.sha256((url + title + html).encode()).hexdigest()[:16]
         
         # タイムスタンプ
         timestamp = datetime.now().isoformat()
         
-        return PageState(
-            hash=state_hash,
+        # テンプレートID
+        template_id = hashlib.sha256(url.encode()).hexdigest()[:8]
+        
+        return PageNode(
+            hash=node_hash,  # DB用
             url=url,
             title=title,
-            state_type=state_type,
-            html=html,
-            aria_snapshot=json.dumps(aria_snapshot, ensure_ascii=False),
-            timestamp=timestamp
+            template_id=template_id,
+            aria_yaml=aria_yaml,
+            dom_hash=hashlib.sha256(html.encode()).hexdigest()[:16],
+            embedding="" # 現在は空
         )
         
     async def _get_aria_snapshot(self, page: Page) -> List[Dict[str, Any]]:
@@ -384,27 +436,59 @@ class WebCrawler:
                 const maxDepth = 3;
                 const result = [];
                 
+                function getCssSelector(el) {
+                    if (!(el instanceof Element)) return '';
+                    const path = [];
+                    while (el.nodeType === Node.ELEMENT_NODE) {
+                        let selector = el.nodeName.toLowerCase();
+                        if (el.id) {
+                            selector += '#' + el.id;
+                            path.unshift(selector);
+                            break;
+                        } else {
+                            let sib = el, nth = 1;
+                            while (sib = sib.previousElementSibling) {
+                                if (sib.nodeName.toLowerCase() === selector) nth++;
+                            }
+                            if (nth !== 1) selector += ":nth-of-type(" + nth + ")";
+                        }
+                        path.unshift(selector);
+                        el = el.parentNode;
+                    }
+                    return path.join(" > ");
+                }
+                
                 function extractElement(el, depth) {
                     if (depth > maxDepth) return null;
                     
                     const data = {
-                        role: el.getAttribute('role'),
-                        name: el.getAttribute('aria-label') || el.getAttribute('name') || el.textContent?.slice(0, 100),
+                        role: el.getAttribute('role') || el.tagName.toLowerCase(),
+                        name: el.getAttribute('aria-label') || el.getAttribute('name') || (el.textContent?.trim().slice(0, 100) || ''),
                         ref_id: el.getAttribute('id') || el.getAttribute('data-qa') || null,
-                        href: el.getAttribute('href')
+                        href: el.getAttribute('href') || null,
+                        selector: getCssSelector(el)
                     };
                     
-                    // 空の値を除去
+                    // bbox追加
+                    data.bbox = el.getBoundingClientRect();
+                    data.bbox = {x: data.bbox.x, y: data.bbox.y, width: data.bbox.width, height: data.bbox.height};
+                    
+                    // 空の値を除去（ただしroleは必須）
                     Object.keys(data).forEach(key => {
-                        if (!data[key]) delete data[key];
+                        if (key !== 'role' && !data[key]) delete data[key];
                     });
                     
-                    return data;
+                    // roleかnameのどちらかが存在する場合のみ
+                    if (data.role || data.name) {
+                        return data;
+                    }
+                    return null;
                 }
                 
-                document.querySelectorAll('*').forEach(el => {
+                const candidates = document.querySelectorAll('a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="button"], input[type="submit"], [role="navigation"], [role="region"], [role="group"]');
+                candidates.forEach(el => {
                     const data = extractElement(el, 0);
-                    if (data && Object.keys(data).length > 1) {
+                    if (data && Object.keys(data).length > 1 && data.selector) {
                         result.push(data);
                     }
                 });
@@ -413,76 +497,45 @@ class WebCrawler:
             }
         ''')
         
-    async def _find_interactions(self, page: Page) -> List[Interaction]:
-        """インタラクション可能な要素を検出"""
-        interactive_elements = await page.evaluate('''
-            () => {
-                const elements = [];
-                const candidates = document.querySelectorAll('a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="button"], input[type="submit"]');
-                candidates.forEach(el => {
-                    const rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0 && el.offsetParent !== null) {
-                        const data = {
-                            tag: el.tagName.toLowerCase(),
-                            role: el.getAttribute('role') || el.tagName.toLowerCase(),
-                            href: el.getAttribute('href') || null,
-                            text: (el.textContent || '').trim().slice(0, 100) || el.getAttribute('aria-label') || el.getAttribute('title') || 'unnamed',
-                            id: el.id || null,
-                            name: el.getAttribute('name') || el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 50) || 'unnamed'
-                        };
-                        // ref_idがない場合は生成
-                        if (!data.id) {
-                            data.id = 'auto_' + Math.random().toString(36).substr(2, 9);
-                            el.id = data.id;
-                        }
-                        elements.push(data);
-                    }
-                });
-                return elements.slice(0, 100); // Limit to 100 to avoid overload
-            }
-        ''')
-        
+    async def _interactions_from_snapshot(self, snapshot: str) -> List[Interaction]:
+        """保存されたARIA snapshotからインタラクションを生成"""
+        items = json.loads(snapshot)
         interactions = []
-        for item in interactive_elements:
-            # ref_idベースのセレクターを使用
-            if not item.get('id'):
+        for item in items:
+            if not item.get('selector'):
                 continue
-            
-            action_type = 'navigate' if item.get('tag') == 'a' or item.get('href') else 'click'
-            selector = f"#{item['id']}"
-            
+            action_type = 'navigate' if item.get('href') else 'click'
             interactions.append(Interaction(
-                selector=selector,
-                text=item.get('text', 'unnamed'),
+                selector=item['selector'],
+                text=item.get('name', 'unnamed'),
                 action_type=action_type,
                 href=item.get('href'),
                 role=item.get('role', 'unknown'),
                 name=item.get('name', 'unnamed'),
-                ref_id=item.get('id')
+                ref_id=item.get('ref_id', 'no_id')
             ))
-        
-        logger.info(f"Found {len(interactions)} interactions in page")
         return interactions
         
     async def _process_interaction(
         self,
         page: Page,
-        from_state: PageState,
+        from_page: PageNode,
         interaction: Interaction,
         depth: int
-    ) -> Tuple[Optional[PageState], Optional[StateTransition]]:
+    ) -> Tuple[Optional[PageNode], Optional[Any]]:
         """インタラクションを処理"""
         async with self.semaphore:
             new_page = await self.context.new_page()
             
             try:
                 # 元のページに移動
-                await new_page.goto(from_state.url, wait_until='networkidle')
+                await new_page.goto(from_page.url, wait_until='networkidle')
+                await new_page.wait_for_timeout(5000)  # 追加待機
                 
                 # インタラクション実行
                 if interaction.action_type == 'navigate' and interaction.href:
                     # URL遷移
-                    target_url = urljoin(from_state.url, interaction.href)
+                    target_url = urljoin(from_page.url, interaction.href)
                     
                     # 内部リンクチェック
                     if not self._is_internal_link(target_url):
@@ -492,48 +545,41 @@ class WebCrawler:
                     
                 else:
                     # クリック
-                    element = await new_page.wait_for_selector(interaction.selector, state='visible', timeout=20000)
-                    if element and await element.is_enabled():
-                        await element.click()
-                        await new_page.wait_for_load_state('networkidle')
-                    else:
+                    try:
+                        element = await new_page.wait_for_selector(interaction.selector, state='visible', timeout=10000)
+                        if element and await element.is_enabled():
+                            await element.click(force=True)
+                            await new_page.wait_for_load_state('networkidle', timeout=30000)
+                        else:
+                            return None, None
+                    except PlaywrightTimeoutError:
+                        logger.info(f"Selector {interaction.selector} not found or not visible")
                         return None, None
                         
                 # 新しい状態をキャプチャ
-                new_state_type = await self._detect_state_type(new_page)
-                new_state = await self._capture_state(new_page, new_state_type)
+                new_page_node = await self._capture_page(new_page)
                 
-                # ARIA context抽出 - nullを避ける
-                aria_context = json.dumps({
-                    'role': interaction.role or 'unknown',
-                    'name': interaction.name or 'unnamed', 
-                    'ref_id': interaction.ref_id or 'no_id'
-                }, ensure_ascii=False)[:MAX_ARIA_CONTEXT_SIZE]
+                # interactionからElement作成 (仮定)
+                el = ElementNode(interaction.selector, interaction.role or 'unknown', interaction.name or 'unnamed', interaction.selector, json.dumps({}), ['click'], True)
+                await self._save_element(el)
+                await self._link_element_to_page(el, new_page_node)
                 
-                # 遷移情報作成
-                transition = StateTransition(
-                    from_hash=from_state.hash,
-                    to_hash=new_state.hash,
-                    action_type=interaction.action_type,
-                    aria_context=aria_context,
-                    element_selector=interaction.selector,
-                    element_text=interaction.text,
-                    role=interaction.role or 'unknown',
-                    name=interaction.name or 'unnamed',
-                    ref_id=interaction.ref_id or 'no_id'
-                )
+                # 遷移情報作成 (リレーション)
+                # ここでは、NAVIGATES_TOリレーションを作成
+                await self._link_page_to_page(from_page, new_page_node)
                 
                 # データベースに保存
-                if new_state.hash not in self.visited_states:
-                    await self._save_state(new_state)
-                    logger.info(
-                        f"    Transition: {interaction.action_type} "
-                        f"'{interaction.text}' -> {new_state.state_type}"
-                    )
-                    
-                await self._save_transition(transition)
+                await self._save_page(new_page_node)
+                logger.info(
+                    f"    Transition: {interaction.action_type} "
+                    f"'{interaction.text}' -> {new_page_node.title}"
+                )
                 
-                return new_state, transition
+                # セッション状態の更新
+                self.session_state = await self._capture_session_state(new_page)
+                await self._save_session_state(self.session_state)
+                
+                return new_page_node, None # エッジはリレーションで表現
                 
             except (PlaywrightTimeoutError, Exception) as e:
                 logger.info(f"インタラクション処理エラー: {e}")
@@ -570,74 +616,161 @@ class WebCrawler:
         target_domain = urlparse(url).netloc
         return base_domain == target_domain
         
-    async def _save_state(self, state: PageState):
-        """状態をNeo4jに保存"""
+    async def _save_page(self, page_node: PageNode):
+        """ページノードをNeo4jに保存"""
         async with self.neo4j_driver.session() as session:
             await session.run(
                 """
-                MERGE (s:State {hash: $hash})
-                SET s.url = $url,
-                    s.title = $title,
-                    s.state_type = $state_type,
-                    s.html = $html,
-                    s.aria_snapshot = $aria_snapshot,
-                    s.timestamp = $timestamp
+                MERGE (p:Page {hash: $hash})
+                SET p.url = $url, p.title = $title, p.template_id = $template_id,
+                    p.aria_yaml = $aria_yaml, p.dom_hash = $dom_hash, p.embedding = $embedding
                 """,
-                hash=state.hash,
-                url=state.url,
-                title=state.title,
-                state_type=state.state_type,
-                html=state.html,
-                aria_snapshot=state.aria_snapshot,
-                timestamp=state.timestamp
+                **page_node.__dict__
             )
-            
-    async def _save_transition(self, transition: StateTransition):
-        """遷移をNeo4jに保存"""
+    
+    async def _save_element(self, el: ElementNode):
+        """要素ノードをNeo4jに保存"""
         async with self.neo4j_driver.session() as session:
             await session.run(
                 """
-                MATCH (from:State {hash: $from_hash})
-                MATCH (to:State {hash: $to_hash})
-                MERGE (from)-[t:TRANSITION {
-                    element_selector: $element_selector
-                }]->(to)
-                SET t.action_type = $action_type,
-                    t.aria_context = $aria_context,
-                    t.element_text = $element_text,
-                    t.role = $role,
-                    t.name = $name,
-                    t.ref_id = $ref_id
+                MERGE (e:Element {element_id: $element_id})
+                SET e.role = $role, e.name = $name, e.selector = $selector,
+                    e.bbox = $bbox, e.action_types = $action_types, e.visibility = $visibility
                 """,
-                from_hash=transition.from_hash,
-                to_hash=transition.to_hash,
-                action_type=transition.action_type,
-                aria_context=transition.aria_context,
-                element_selector=transition.element_selector,
-                element_text=transition.element_text,
-                role=transition.role,
-                name=transition.name,
-                ref_id=transition.ref_id
+                **el.__dict__
             )
-            
+    
+    async def _save_form(self, form: FormNode):
+        """フォームノードをNeo4jに保存"""
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MERGE (f:Form {form_id: $form_id})
+                SET f.method = $method, f.action = $action, f.required_fields = $required_fields
+                """,
+                **form.__dict__
+            )
+    
+    async def _save_session_state(self, state: SessionStateNode):
+        """セッション状態ノードをNeo4jに保存"""
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MERGE (s:SessionState {auth: $auth})
+                SET s.cookies = $cookies, s.query_params = $query_params
+                """,
+                **state.__dict__
+            )
+    
+    # リレーションリンク関数
+    async def _link_page_to_page(self, from_page: PageNode, to_page: PageNode):
+        """ページ間のリレーションを作成"""
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MATCH (p1:Page {hash: $from_hash})
+                MATCH (p2:Page {hash: $to_hash})
+                MERGE (p1)-[:NAVIGATES_TO]->(p2)
+                """,
+                from_hash=from_page.hash, to_hash=to_page.hash
+            )
+    
+    async def _link_session_to_page(self, state: SessionStateNode, page: PageNode):
+        """セッション状態とページのリレーションを作成"""
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MATCH (s:SessionState {auth: $auth})
+                MATCH (p:Page {hash: $hash})
+                MERGE (p)-[:REQUIRES_STATE]->(s)
+                """, auth=state.auth, hash=page.hash
+            )
+    
+    async def _link_form_to_field(self, form: FormNode, el: ElementNode):
+        """フォームとフィールドのリレーションを作成"""
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MATCH (f:Form {form_id: $form_id})
+                MATCH (e:Element {element_id: $el_id})
+                MERGE (f)-[:HAS_FIELD]->(e)
+                """,
+                form_id=form.form_id, el_id=el.element_id
+            )
+    
+    async def _link_page_to_element(self, page: PageNode, el: ElementNode):
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MATCH (p:Page {hash: $page_hash})
+                MATCH (e:Element {element_id: $el_id})
+                MERGE (p)-[:HAS_ELEMENT]->(e)
+                """,
+                page_hash=page.hash, el_id=el.element_id
+            )
+ 
+    async def _link_element_to_page(self, el: ElementNode, to_page: PageNode):
+        async with self.neo4j_driver.session() as session:
+            await session.run(
+                """
+                MATCH (e:Element {element_id: $el_id})
+                MATCH (p:Page {hash: $page_hash})
+                MERGE (e)-[:NAVIGATES_TO]->(p)
+                """,
+                el_id=el.element_id, page_hash=to_page.hash
+            )
+
     async def _gather_with_semaphore(self, tasks: List) -> List:
-        """セマフォで制御された並列実行"""
         results = []
-        
-        # バッチ処理
         batch_size = self.config['parallel_tasks']
         for i in range(0, len(tasks), batch_size):
             batch = tasks[i:i + batch_size]
             batch_results = await asyncio.gather(*batch, return_exceptions=True)
-            
             for result in batch_results:
                 if isinstance(result, Exception):
                     logger.info(f"タスクエラー: {result}")
-                    results.append((None, None))
                 else:
                     results.append(result)
-                    
         return results
+
+    async def _capture_session_state(self, page: Page) -> SessionStateNode:
+        cookies = await page.context.cookies()
+        return SessionStateNode(True, json.dumps(cookies), json.dumps(dict(urlparse(page.url).query)) or '{}')
+
+    # 他のリレーション (NAVIGATES_TO, PART_OF_FORM, SUBMITS_TO) は_process_interactionで動的に作成
+
+    async def _extract_elements(self, page: Page, aria_yaml: str) -> List[ElementNode]:
+        items = json.loads(aria_yaml)
+        elements = []
+        for item in items:
+            el = ElementNode(
+                item.get('selector', 'unknown'),
+                item.get('role', 'unknown'),
+                item.get('name', 'unnamed'),
+                item.get('selector', 'unknown'),
+                json.dumps(item.get('bbox', {})),
+                ['click'] if item.get('role') in ['button', 'link'] else ['fill'],
+                True  # 仮定
+            )
+            elements.append(el)
+        return elements
+
+    async def _extract_forms(self, page: Page) -> List[FormNode]:
+        forms = await page.evaluate('''
+            () => {
+                const formList = [];
+                document.querySelectorAll('form').forEach(form => {
+                    formList.push({
+                        form_id: form.id || 'generated_' + Math.random().toString(36),
+                        method: form.method || 'GET',
+                        action: form.action || '',
+                        required_fields: Array.from(form.querySelectorAll('[required]')).map(el => el.name || el.id)
+                    });
+                });
+                return formList;
+            }
+        ''')
+        return [FormNode(f['form_id'], f['method'], f['action'], f['required_fields']) for f in forms]
 
 
 async def main():
