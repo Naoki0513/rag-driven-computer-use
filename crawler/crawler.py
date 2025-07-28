@@ -13,20 +13,7 @@ from neo4j import AsyncGraphDatabase
 import logging
 logger = logging.getLogger(__name__)
 
-# Constants
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "password"
-
-TARGET_URL = "http://the-agent-company.com:3000/"
-LOGIN_USER = "theagentcompany"
-LOGIN_PASS = "theagentcompany"
-MAX_STATES = 10000
-MAX_DEPTH = 20
-PARALLEL_TASKS = 8
-
-MAX_HTML_SIZE = 100 * 1024
-MAX_ARIA_CONTEXT_SIZE = 2 * 1024
+# Import constants from constants.py
 
 @dataclass
 class Node:
@@ -121,7 +108,7 @@ class WebCrawler:
             await page.goto(self.config['target_url'], wait_until='networkidle')
             pre_login_node = await capture_node(page)
             await save_node(self.neo4j_driver, pre_login_node)
-            self.visited_states.add(pre_login_node.state_hash)
+            self.visited_states.add(pre_login_node.page_url)
             
             await self._login(page)
             
@@ -130,7 +117,7 @@ class WebCrawler:
             await create_relation(self.neo4j_driver, pre_login_node, post_login_node, Interaction('', '', 'submit'))  # Assume login as submit
             
             self.queue.append(QueueItem(post_login_node, 0))
-            self.visited_states.add(post_login_node.state_hash)
+            self.visited_states.add(post_login_node.page_url)
             visited_count = 2
             
             exhaustive = self.config.get('exhaustive', False)
@@ -160,10 +147,10 @@ class WebCrawler:
                 results = await gather_with_semaphore(self.config, tasks)
                 
                 for new_node in results:
-                    if new_node and new_node.state_hash not in self.visited_states:
+                    if new_node and new_node.page_url not in self.visited_states:
                         await save_node(self.neo4j_driver, new_node)
                         await create_relation(self.neo4j_driver, current_item.node, new_node, interaction)
-                        self.visited_states.add(new_node.state_hash)
+                        self.visited_states.add(new_node.page_url)
                         self.queue.append(QueueItem(new_node, current_item.depth + 1))
                         visited_count += 1
                         

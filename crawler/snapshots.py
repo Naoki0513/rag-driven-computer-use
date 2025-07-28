@@ -8,6 +8,8 @@ from .models import Node
 
 async def capture_node(page: Page) -> Node:
     await page.wait_for_load_state('networkidle')
+    # 動的コンテンツの読み込み完了を待つ
+    await page.wait_for_timeout(3000)
     
     url = page.url
     title = await page.title()
@@ -18,31 +20,23 @@ async def capture_node(page: Page) -> Node:
     
     aria_snapshot = json.dumps(await get_aria_snapshot(page), ensure_ascii=False)
     
-    dom_snapshot = json.dumps(await get_dom_snapshot(page), ensure_ascii=False)
-    
     headings = json.dumps(await page.evaluate('''() => Array.from(document.querySelectorAll('h1,h2,h3')).map(h => h.textContent.trim())'''), ensure_ascii=False)
     
     timestamp = datetime.now().isoformat()
-    content_for_hash = url + title + html
-    visited_at = hashlib.sha256(content_for_hash.encode()).hexdigest()[:16]
-    state_hash = hashlib.sha256((url + visited_at).encode()).hexdigest()[:16]
     
     return Node(
         page_url=url,
         html_snapshot=html,
         aria_snapshot=aria_snapshot,
-        dom_snapshot=dom_snapshot,
         title=title,
         heading=headings,
-        timestamp=timestamp,
-        visited_at=visited_at,
-        state_hash=state_hash
+        timestamp=timestamp
     )
 
 async def get_aria_snapshot(page: Page) -> List[Dict[str, Any]]:
     return await page.evaluate('''
         () => {
-            const maxDepth = 3;
+            const maxDepth = 5;
             const result = [];
             
             function getCssSelector(el) {
@@ -70,9 +64,18 @@ async def get_aria_snapshot(page: Page) -> List[Dict[str, Any]]:
             function extractElement(el, depth) {
                 if (depth > maxDepth) return null;
                 
+                const tagName = el.tagName.toLowerCase();
+                const role = el.getAttribute('role') || tagName;
+                const name = el.getAttribute('aria-label') || 
+                           el.getAttribute('name') || 
+                           el.getAttribute('title') ||
+                           el.getAttribute('alt') ||
+                           (el.textContent?.trim().slice(0, 100) || '');
+                
                 const data = {
-                    role: el.getAttribute('role') || el.tagName.toLowerCase(),
-                    name: el.getAttribute('aria-label') || el.getAttribute('name') || (el.textContent?.trim().slice(0, 100) || ''),
+                    role: role,
+                    name: name,
+                    tag: tagName,
                     ref_id: el.getAttribute('id') || el.getAttribute('data-qa') || null,
                     href: el.getAttribute('href') || null,
                     selector: getCssSelector(el)
@@ -81,23 +84,45 @@ async def get_aria_snapshot(page: Page) -> List[Dict[str, Any]]:
                 data.bbox = el.getBoundingClientRect();
                 data.bbox = {x: data.bbox.x, y: data.bbox.y, width: data.bbox.width, height: data.bbox.height};
                 
-                Object.keys(data).forEach(key => {
-                    if (key !== 'role' && !data[key]) delete data[key];
-                });
-                
-                if (data.role || data.name) {
+                // より柔軟な条件に変更 - 要素のサイズまたはテキストがあれば有効
+                if (data.name || data.href || (data.bbox.width > 0 && data.bbox.height > 0)) {
                     return data;
                 }
                 return null;
             }
             
-            const candidates = document.querySelectorAll('a[href], button, [role="button"], [role="link"], [role="tab"], [role="menuitem"], input[type="button"], input[type="submit"], [role="navigation"], [role="region"], [role="group"]');
+            // より広範なセレクタで要素を検索
+            const candidates = document.querySelectorAll(`
+                a, button, input, select, textarea, 
+                [role="button"], [role="link"], [role="tab"], [role="menuitem"], 
+                [role="navigation"], [role="region"], [role="group"], [role="listitem"],
+                [onclick], [href], [data-qa], [data-testid],
+                .btn, .button, .link, .menu-item, .nav-item,
+                li, span[class*="button"], div[class*="button"], div[class*="clickable"]
+            `);
+            
             candidates.forEach(el => {
                 const data = extractElement(el, 0);
-                if (data && Object.keys(data).length > 1 && data.selector) {
+                if (data && data.selector) {
                     result.push(data);
                 }
             });
+            
+            // 最低限の要素が見つからない場合は、すべての表示可能な要素を取得
+            if (result.length < 5) {
+                const allElements = document.querySelectorAll('*');
+                Array.from(allElements).forEach(el => {
+                    if (result.length >= 50) return; // 上限設定
+                    
+                    const bbox = el.getBoundingClientRect();
+                    if (bbox.width > 0 && bbox.height > 0) {
+                        const data = extractElement(el, 0);
+                        if (data && data.selector && !result.some(r => r.selector === data.selector)) {
+                            result.push(data);
+                        }
+                    }
+                });
+            }
             
             return result.slice(0, 1000);
         }

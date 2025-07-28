@@ -7,12 +7,9 @@ class Node:
     page_url: str
     html_snapshot: str
     aria_snapshot: str
-    dom_snapshot: str
     title: str
     heading: str
     timestamp: str
-    visited_at: str
-    state_hash: str
 
 @dataclass
 class Interaction:

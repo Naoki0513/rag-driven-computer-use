@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 # Constants
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "password"
+NEO4J_PASSWORD = "testpassword"
 
 TARGET_URL = "http://the-agent-company.com:3000/"
 LOGIN_USER = "theagentcompany"
