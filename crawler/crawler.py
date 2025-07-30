@@ -1,61 +1,17 @@
 import asyncio
-import argparse
-import hashlib
-import json
-from datetime import datetime
-from typing import Optional, Dict, Any, List, Tuple, Set
-from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
-
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeoutError
-from neo4j import AsyncGraphDatabase
-
 import logging
-logger = logging.getLogger(__name__)
-
-# Import constants from constants.py
-
-@dataclass
-class Node:
-    page_url: str
-    html_snapshot: str
-    aria_snapshot: str
-    dom_snapshot: str
-    title: str
-    heading: str
-    timestamp: str
-    visited_at: str
-    state_hash: str
-
-@dataclass
-class Interaction:
-    selector: str
-    text: str
-    action_type: str  # click, input, select, navigate, submit
-    href: Optional[str] = None
-    role: Optional[str] = None
-    name: Optional[str] = None
-    ref_id: Optional[str] = None
-    input_value: Optional[str] = None
-    selected_value: Optional[str] = None
-    form_id: Optional[str] = None
-
-@dataclass
-class QueueItem:
-    node: Node
-    depth: int
-
-# crawler.py
-import asyncio
 from typing import Dict, Any, Set, List
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from neo4j import AsyncGraphDatabase
+
 from .constants import *
 from .models import Node, Interaction, QueueItem
 from .database import init_database, save_node, create_relation
 from .snapshots import capture_node
 from .interactions import interactions_from_snapshot, process_interaction
 from .utils import gather_with_semaphore
+
+logger = logging.getLogger(__name__)
 
 class WebCrawler:
     def __init__(self, config: Dict[str, Any]):
@@ -92,7 +48,10 @@ class WebCrawler:
         
     async def cleanup(self):
         if self.context:
-            await self.context.close()
+            try:
+                await self.context.close()
+            except Exception as e:
+                logger.warning(f"Context close error: {e}")
         if self.browser:
             await self.browser.close()
         if self.playwright:
@@ -114,7 +73,7 @@ class WebCrawler:
             
             post_login_node = await capture_node(page)
             await save_node(self.neo4j_driver, post_login_node)
-            await create_relation(self.neo4j_driver, pre_login_node, post_login_node, Interaction('', '', 'submit'))  # Assume login as submit
+            await create_relation(self.neo4j_driver, pre_login_node, post_login_node, Interaction(selector=None, text='login', action_type='submit'))  # Assume login as submit
             
             self.queue.append(QueueItem(post_login_node, 0))
             self.visited_states.add(post_login_node.page_url)
@@ -200,41 +159,4 @@ class WebCrawler:
             else:
                 logger.warning("Login confirmation elements not found")
         else:
-            logger.info("Login form not found, continuing")
-
-async def main():
-    parser = argparse.ArgumentParser(description='Web application state graph crawler')
-    parser.add_argument('--url', default=TARGET_URL, help='Target URL to crawl')
-    parser.add_argument('--user', default=LOGIN_USER, help='Login username')
-    parser.add_argument('--password', default=LOGIN_PASS, help='Login password')
-    parser.add_argument('--depth', type=int, default=MAX_DEPTH, help='Max exploration depth')
-    parser.add_argument('--limit', type=int, default=MAX_STATES, help='Max states')
-    parser.add_argument('--headful', action='store_true', help='Show browser')
-    parser.add_argument('--parallel', type=int, default=PARALLEL_TASKS, help='Parallel tasks')
-    parser.add_argument('--no-clear', action='store_true', help='Do not clear database')
-    parser.add_argument('--exhaustive', action='store_true', help='Exhaustive crawl ignoring limits')
-    
-    args = parser.parse_args()
-    
-    logging.basicConfig(level=logging.DEBUG if args.headful else logging.INFO, format='%(asctime)s %(levelname)-5s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    
-    config = {
-        'neo4j_uri': NEO4J_URI,
-        'neo4j_user': NEO4J_USER,
-        'neo4j_password': NEO4J_PASSWORD,
-        'target_url': args.url,
-        'login_user': args.user,
-        'login_pass': args.password,
-        'max_depth': args.depth,
-        'max_states': args.limit,
-        'headful': args.headful,
-        'parallel_tasks': args.parallel,
-        'clear_db': not args.no_clear,
-        'exhaustive': args.exhaustive
-    }
-    
-    async with WebCrawler(config) as crawler:
-        await crawler.run()
-
-if __name__ == '__main__':
-    asyncio.run(main()) 
+            logger.info("Login form not found, continuing") 

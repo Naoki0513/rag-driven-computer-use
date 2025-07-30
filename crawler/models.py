@@ -19,7 +19,6 @@ class Interaction:
     href: Optional[str] = None
     role: Optional[str] = None
     name: Optional[str] = None
-    ref_id: Optional[str] = None
     input_value: Optional[str] = None
     selected_value: Optional[str] = None
     form_id: Optional[str] = None

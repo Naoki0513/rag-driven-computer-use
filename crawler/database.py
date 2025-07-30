@@ -43,7 +43,6 @@ async def create_relation(driver, from_node: Node, to_node: Node, interaction: I
     rel_type = 'CLICK_TO'
     
     props = {
-        'element_id': interaction.selector,
         'action_type': 'click',
         'element_type': interaction.role or 'button',
         'conditions': json.dumps({'auth_required': True})
@@ -52,7 +51,7 @@ async def create_relation(driver, from_node: Node, to_node: Node, interaction: I
     query = f"""
         MATCH (a:Page {{page_url: $from_url}})
         MATCH (b:Page {{page_url: $to_url}})
-        MERGE (a)-[r:{rel_type} {{element_id: $element_id, action_type: $action_type}}]->(b)
+        MERGE (a)-[r:{rel_type} {{action_type: $action_type, element_type: $element_type}}]->(b)
         SET r += $props
     """
     async with driver.session() as session:
