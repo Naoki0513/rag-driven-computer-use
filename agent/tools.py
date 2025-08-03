@@ -30,47 +30,69 @@ async def execute_workflow_async(workflow):
         await page.wait_for_timeout(5000)  # Additional wait for dynamic content
         
         results = []
-        for step in workflow:
-            action = step.get('action')
-            if action == 'goto':
-                url = step.get('url')
-                if url:
-                    await page.goto(url)
-                    results.append(f"Navigated to {url}")
-                    await page.wait_for_load_state('networkidle', timeout=30000)
-                else:
-                    results.append("Invalid goto step: missing url")
-                continue
-            
-            role = step.get('role')
-            name = step.get('name')
-            if role and name:
-                try:
-                    locator = page.get_by_role(role, name=name, exact=True)
-                    await locator.wait_for(state="visible", timeout=30000)
-                    
-                    if action == 'click':
-                        await locator.click()
-                        results.append(f"Clicked {role}: {name}")
-                    elif action == 'input':
-                        text = step.get('text')
-                        if text:
-                            await locator.fill(text)
-                            results.append(f"Input {text} into {role}: {name}")
-                    elif action == 'press':
-                        key = step.get('key')
-                        if key:
-                            await locator.press(key)
-                            results.append(f"Pressed {key} on {role}: {name}")
-                    # Add more actions as needed
-                    await page.wait_for_load_state('networkidle', timeout=30000)
-                except Exception as e:
-                    results.append(f"Error in step: {str(e)}")
-            else:
-                results.append("Invalid step: missing role or name")
+        snapshots = []  # To collect ARIA snapshots
         
-        await browser.close()
-    return "\n".join(results) + "\nWorkflow executed."
+        try:
+            for i, step in enumerate(workflow):
+                action = step.get('action')
+                try:
+                    if action == 'goto':
+                        url = step.get('url')
+                        if url:
+                            await page.goto(url)
+                            results.append(f"Navigated to {url}")
+                            await page.wait_for_load_state('networkidle', timeout=30000)
+                        else:
+                            results.append("Invalid goto step: missing url")
+                    elif action in ['click', 'input', 'press']:
+                        role = step.get('role')
+                        name = step.get('name')
+                        if role and name:
+                            locator = page.get_by_role(role, name=name, exact=True)
+                            await locator.wait_for(state="visible", timeout=30000)
+                            
+                            if action == 'click':
+                                await locator.click()
+                                results.append(f"Clicked {role}: {name}")
+                            elif action == 'input':
+                                text = step.get('text')
+                                if text:
+                                    await locator.fill(text)
+                                    results.append(f"Input {text} into {role}: {name}")
+                            elif action == 'press':
+                                key = step.get('key')
+                                if key:
+                                    await locator.press(key)
+                                    results.append(f"Pressed {key} on {role}: {name}")
+                            # Add more actions as needed
+                            await page.wait_for_load_state('networkidle', timeout=30000)
+                        else:
+                            results.append("Invalid step: missing role or name")
+                    else:
+                        results.append(f"Unknown action: {action}")
+                    
+                    # Capture ARIA snapshot after each step
+                    snapshot = await page.accessibility.snapshot()
+                    snapshots.append(f"ARIA Snapshot after step {i+1}: {snapshot}")
+                
+                except Exception as step_error:
+                    # Capture snapshot on error
+                    error_snapshot = await page.accessibility.snapshot()
+                    results.append(f"Error in step {i+1}: {str(step_error)}\nError ARIA Snapshot: {error_snapshot}")
+                    snapshots.append(f"Error ARIA Snapshot for step {i+1}: {error_snapshot}")
+                    raise  # Re-raise to handle outer try-except
+            
+            # Final snapshot after all steps
+            final_snapshot = await page.accessibility.snapshot()
+            snapshots.append(f"Final ARIA Snapshot: {final_snapshot}")
+        
+        except Exception as e:
+            results.append(f"Workflow execution failed: {str(e)}")
+        
+        finally:
+            await browser.close()
+        
+        return "\n".join(results) + "\n\nSnapshots:\n" + "\n".join(snapshots) + "\nWorkflow executed."
 
 def execute_workflow(workflow: list[dict]) -> str:
     loop = asyncio.new_event_loop()
