@@ -5,118 +5,21 @@ from agent.config import (
     AWS_REGION, BEDROCK_MODEL_ID
 )
 from utilities.neo4j_utils import Neo4jManager
-from agent.tools import run_cypher
+from agent.tools import run_cypher, execute_workflow
 from agent.prompt import create_system_prompt
 
 import copy
 from typing import List, Dict, Any
 import time
 import botocore.exceptions
+import json
+
+from agent.cache_utils import add_cache_points
+from agent.schema_utils import get_database_schema
+from agent.prompt import create_system_prompt_with_schema
 
 # グローバルNeo4jマネージャーインスタンス
 neo4j_manager = None
-
-# システムプロンプトの初回表示フラグ
-_system_prompt_shown = False
-
-def add_cache_points(messages: List[Dict[str, Any]], is_claude: bool, is_nova: bool) -> List[Dict[str, Any]]:
-    if not (is_claude or is_nova):
-        return messages
-    
-    max_points = 2 if is_claude else 3 if is_nova else 0
-    messages_with_cache = []
-    user_turns_processed = 0
-    
-    for message in reversed(messages):
-        m = copy.deepcopy(message)
-        if m["role"] == "user" and user_turns_processed < max_points:
-            append_cache = False
-            if is_claude:
-                append_cache = True
-            elif is_nova:
-                has_text = any(isinstance(c, dict) and "text" in c for c in m.get("content", []))
-                if has_text:
-                    append_cache = True
-            if append_cache:
-                if not isinstance(m["content"], list):
-                    m["content"] = [{"text": m["content"]}]
-                m["content"].append({"cachePoint": {"type": "default"}})
-                user_turns_processed += 1
-        messages_with_cache.append(m)
-    
-    messages_with_cache.reverse()
-    return messages_with_cache
-
-def get_database_schema(neo4j_manager: Neo4jManager) -> str:
-    """データベースのスキーマ情報を取得"""
-    try:
-        # ノードラベルの取得
-        labels_query = "CALL db.labels() YIELD label RETURN label"
-        labels = neo4j_manager.execute_cypher(labels_query)
-        label_list = [record['label'] for record in labels]
-        
-        # リレーションシップタイプの取得
-        rel_query = "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType"
-        relationships = neo4j_manager.execute_cypher(rel_query)
-        rel_list = [record['relationshipType'] for record in relationships]
-        
-        # 各ノードラベルごとのプロパティキー取得
-        node_props = {}
-        for label in label_list:
-            prop_query = f"MATCH (n:{label}) UNWIND keys(n) AS key RETURN DISTINCT key"
-            props = neo4j_manager.execute_cypher(prop_query)
-            node_props[label] = [record['key'] for record in props]
-        
-        # 各リレーションシップタイプごとのプロパティキー取得
-        rel_props = {}
-        for rel_type in rel_list:
-            prop_query = f"MATCH ()-[r:{rel_type}]->() UNWIND keys(r) AS key RETURN DISTINCT key"
-            props = neo4j_manager.execute_cypher(prop_query)
-            rel_props[rel_type] = [record['key'] for record in props]
-        
-        # 各ノードラベルのノード数を取得
-        node_counts = []
-        for label in label_list:
-            count_query = f"MATCH (n:{label}) RETURN count(n) as count"
-            result = neo4j_manager.execute_cypher(count_query)
-            if result:
-                node_counts.append(f"  - {label}: {result[0]['count']}ノード (プロパティ: {', '.join(node_props.get(label, []))})")
-        
-        # 各リレーションシップタイプの数を取得
-        rel_counts = []
-        for rel_type in rel_list:
-            count_query = f"MATCH ()-[r:{rel_type}]->() RETURN count(r) as count"
-            result = neo4j_manager.execute_cypher(count_query)
-            if result:
-                rel_counts.append(f"  - {rel_type}: {result[0]['count']}件 (プロパティ: {', '.join(rel_props.get(rel_type, []))})")
-        
-        schema_info = f"""
-データベーススキーマ情報:
-- ノードラベル: {', '.join(label_list) if label_list else 'なし'}
-{chr(10).join(node_counts) if node_counts else ''}
-
-- リレーションシップタイプ: {', '.join(rel_list) if rel_list else 'なし'}
-{chr(10).join(rel_counts) if rel_counts else ''}
-"""
-        return schema_info
-        
-    except Exception as e:
-        return f"スキーマ取得エラー: {str(e)}"
-
-def create_system_prompt_with_schema(database_schema: str = "") -> str:
-    global _system_prompt_shown
-    
-    system_prompt = create_system_prompt(database_schema)
-    
-    if not _system_prompt_shown:
-        print("\n[システムプロンプト（初回のみ表示）]")
-        print("=" * 80)
-        print(system_prompt)
-        print("=" * 80)
-        print()
-        _system_prompt_shown = True
-    
-    return system_prompt
 
 def run_single_query(query: str):
     global neo4j_manager
@@ -178,8 +81,38 @@ def run_single_query(query: str):
             }
         }
     }
-    
-    tools_list = [tool_spec]
+
+    # Add new tool
+    workflow_tool = {
+        "toolSpec": {
+            "name": "execute_workflow",
+            "description": "JSON形式のワークフローを入力として受け取り、Playwright APIを使ってブラウザを操作し、各ステップを直列に実行。目標達成したら終了。",
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "workflow": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {"type": "string"},
+                                    "url": {"type": "string"},
+                                    "name": {"type": "string"},
+                                    "role": {"type": "string"},
+                                    "text": {"type": "string"},
+                                    "key": {"type": "string"}
+                                }
+                            }
+                        }
+                    },
+                    "required": ["workflow"]
+                }
+            }
+        }
+    }
+
+    tools_list = [tool_spec, workflow_tool]
     if is_cache_supported and is_claude:
         tools_list.append({"cachePoint": {"type": "default"}})
     
@@ -257,6 +190,16 @@ def run_single_query(query: str):
                         
                         if tool_name == 'run_cypher':
                             result = run_cypher(tool_input['query'])
+                            tool_results.append({
+                                "toolResult": {
+                                    "toolUseId": tool_use_id,
+                                    "content": [{"text": result}],
+                                    "status": "success"
+                                }
+                            })
+                        elif tool_name == 'execute_workflow':
+                            print(f"Executing workflow:\n{json.dumps(tool_input['workflow'], indent=2, ensure_ascii=False)}")
+                            result = execute_workflow(tool_input['workflow'])
                             tool_results.append({
                                 "toolResult": {
                                     "toolUseId": tool_use_id,

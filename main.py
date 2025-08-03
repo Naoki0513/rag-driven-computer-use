@@ -36,5 +36,12 @@ WebGraph-Agent Cypher AI エージェント
     query = " ".join(sys.argv[1:])
     run_single_query(query)
 
+def test_new_functionality(query):
+    run_single_query(query)
+
 if __name__ == "__main__":
-    main() 
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        test_query = "generalチャンネルにアクセスし、「yes」と投稿してください"
+        test_new_functionality(test_query)
+    else:
+        main() 
