@@ -189,7 +189,9 @@ def run_single_query(query: str):
                         tool_use_id = tool_use['toolUseId']
                         
                         if tool_name == 'run_cypher':
+                            print(f"Calling tool: {tool_name} with input: {json.dumps(tool_input, ensure_ascii=False)}")
                             result = run_cypher(tool_input['query'])
+                            print(f"Tool result: {result}")
                             tool_results.append({
                                 "toolResult": {
                                     "toolUseId": tool_use_id,
@@ -200,6 +202,7 @@ def run_single_query(query: str):
                         elif tool_name == 'execute_workflow':
                             print(f"Executing workflow:\n{json.dumps(tool_input['workflow'], indent=2, ensure_ascii=False)}")
                             result = execute_workflow(tool_input['workflow'])
+                            print(f"Tool result: {result}")
                             tool_results.append({
                                 "toolResult": {
                                     "toolUseId": tool_use_id,
@@ -209,6 +212,7 @@ def run_single_query(query: str):
                             })
                 
                 if tool_results:
+                    print(f"Adding tool results to messages: {json.dumps(tool_results, ensure_ascii=False)}")
                     messages.append({"role": "user", "content": tool_results})
             elif stop_reason == 'max_tokens':
                 print("\n最大トークン数に達しました。応答が途切れている可能性があります。")
