@@ -1,0 +1,33 @@
+{
+  "name": "webgraph-demo",
+  "version": "1.0.0",
+  "description": "Neo4jグラフデータベースに対して自然言語でクエリを実行できるAIエージェントと、Webアプリケーションの状態遷移をクロールする高度なツールセットです。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/main.js",
+    "playwright:install": "npx playwright install"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "js-yaml": "^4.1.0",
+    "neo4j-driver": "^5.28.1",
+    "p-limit": "^6.2.0",
+    "playwright": "^1.54.0",
+    "yargs": "^18.0.0",
+    "zod": "^4.0.16"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.2.1",
+    "@types/yargs": "^17.0.33",
+    "eslint": "^9.33.0",
+    "typescript": "^5.9.2"
+  }
+}

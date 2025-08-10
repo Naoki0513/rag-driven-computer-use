@@ -1,4 +1,4 @@
-# WebGraph-Agent
+# WebGraph-Agent (TypeScript/Node.js)
 
 Neo4jグラフデータベースに対して自然言語でクエリを実行できるAIエージェントと、Webアプリケーションの状態遷移をクロールする高度なツールセットです。
 
@@ -19,16 +19,16 @@ WebGraph-Agentは2つの主要コンポーネントで構成されています�
 - ユーザー名: `neo4j`
 - パスワード: `testpassword`
 
-### Python
-- Python 3.9以上（3.12.3推奨）
-- pip 24.0以上
+### Node.js / TypeScript
+- Node.js 20以上（20.19以降推奨）
+- npm 10以上
 
 ### AWS Bedrock（AIエージェント用）
 - AWS アカウント
 - Bedrock API アクセス権限
 - Claude 3 Sonnet モデルへのアクセス権限
 
-## セットアップ
+## セットアップ（Node.js/TypeScript 版）
 
 ### 1. リポジトリをクローン
 ```bash
@@ -36,49 +36,28 @@ git clone https://github.com/your-username/webgraph-demo.git
 cd webgraph-demo
 ```
 
-### 2. Python環境のセットアップ
+### 2. 依存インストール（Node）
 ```bash
-# 仮想環境を作成
-python -m venv .venv
-
-# 仮想環境を有効化
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
-# 依存関係をインストール
-pip install -r requirements.txt
+npm install
+npm run playwright:install   # 初回のみ（ブラウザをインストール）
 ```
 
-### 3. 設定ファイルの編集
-`agent/config.py` ファイルを編集してNeo4jとAWSの認証情報を設定：
+### 3. 設定（.env）
+`.env` を作成し、`.env.example` を参考に値を設定してください。
 
-```python
-# Neo4j設定
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "your_password"
-
-# AWS Bedrock設定
-AWS_REGION = "us-west-2"
-AWS_BEARER_TOKEN_BEDROCK = "your_aws_api_key"
-BEDROCK_MODEL_ID = "anthropic.claude-3-sonnet-20240229-v1:0"
-```
+優先順位: CLI > .env > デフォルト。
 
 ## 🚀 使い方
 
-### 1. AIエージェント（メイン機能）
-
-Neo4jデータベースに対して自然言語でクエリを実行できます：
+### 1. TypeScript クローラー（本移行範囲）
 
 ```bash
-# AIエージェントを起動してクエリを実行
-python main.py "<クエリ>"
-
-例:
-python main.py "ノード数を教えて"
+npm run typecheck
+npm run build
+npm start -- --url http://the-agent-company.com:3000/ --headful
 ```
+
+起動時ログに、初期ページのキャプチャ、ログイン判定、その後のBFSクロール進捗が表示されます。Neo4j未接続時は安全にスキップし、クローリングのみ実行します（結果はログ出力）。
 
 対話例：
 ```
@@ -105,16 +84,18 @@ python main.py "ノード数を教えて"
 
 ### 2. 補助ツール
 
-#### Webクローラー（データ収集）
+#### CLI オプション
 ```bash
-# 基本的な使用
-python utilities/crawler.py --url https://example.com
-
-# 詳細なオプション
-python utilities/crawler.py --url https://example.com --depth 5 --limit 100 --parallel 16
-
-# 認証が必要なサイト
-python utilities/crawler.py --url https://app.example.com --user myuser --password mypass
+node dist/main.js \
+  --url <URL> \
+  --user <USER> \
+  --password <PASSWORD> \
+  --depth 20 \
+  --limit 10000 \
+  --parallel 8 \
+  --headful \
+  --no-clear \
+  --exhaustive
 ```
 
 #### Neo4j接続診断
@@ -248,7 +229,7 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 ### Neo4j接続エラー
 - Neo4jが起動していることを確認
 - 接続情報（URI、ユーザー名、パスワード）を確認
-- `python utilities/test_neo4j_connection.py` で診断実行
+- Node版では `node utilities/test_neo4j_connection.js`（将来提供予定）
 
 ### クロール関連
 - ネットワーク接続を確認
@@ -287,7 +268,12 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 
 問題が発生した場合は、GitHubのissueを作成してください。
 
-## クローラー修正のナレッジ
+## 移行ノート（Python → TypeScript）
+
+- 設定は `.env` へ統一（CLIが最優先）
+- Playwright の `Locator.ariaSnapshot()` はバージョン相違により未対応の可能性があるため、フォールバックとして `page.accessibility.snapshot()` のYAML化を採用
+- Neo4j未接続時はスキップ実行可能（ログに警告を出力）
+- 主要クラス/関数の対応: `WebCrawler`/`captureNode`/`interactions_from_snapshot`/`save_node` 等をTSへ移植
 
 crawler.pyの実行が途中で止まる問題の原因と修正:
 

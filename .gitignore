@@ -31,6 +31,9 @@ pyvenv.cfg
 .DS_Store
 Thumbs.db
 
+# Node
+node_modules/
+
 # Project specific - data files
 # *.json  # コメントアウト（requirements.jsonなどは必要）
 *.cypher
