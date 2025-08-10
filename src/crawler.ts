@@ -51,8 +51,8 @@ export class WebCrawler {
       await this.login(page);
 
       const postLoginNode = await this.captureAndStore(page);
-      if (this.driver) {
-        await createRelation(this.driver, preLoginNode, postLoginNode, { actionType: 'submit', refId: null });
+    if (this.driver) {
+        await createRelation(this.driver, preLoginNode, postLoginNode, { actionType: 'submit', ref: null, href: null, role: null, name: null });
       }
       this.visitedStates.add(normalizeUrl(postLoginNode.url));
       this.queue.push({ node: postLoginNode, depth: 0 });
@@ -97,8 +97,9 @@ export class WebCrawler {
           }
         }
 
-         const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
-          const tasks = interactions.slice(0, 50).map((interaction) => async () => {
+          const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
+          // 1ページあたり全要素を対象にする（並列度は parallelTasks で制御）
+          const tasks = interactions.map((interaction) => async () => {
           if (!this.context) return null;
           const newNode = await processInteraction(this.context, current.node, interaction, {
             ...this.config,
@@ -145,8 +146,10 @@ export class WebCrawler {
     await saveNode(this.driver, newNode);
     await createRelation(this.driver, fromNode, newNode, {
       actionType: interaction.actionType,
-      ref: interaction.ref ?? null,
-      refId: interaction.refId ?? null,
+      ref: interaction.ref ?? interaction.refId ?? null,
+      href: interaction.href ?? null,
+      role: interaction.role ?? null,
+      name: interaction.name ?? null,
     });
   }
 

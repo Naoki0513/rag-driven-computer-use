@@ -1,8 +1,7 @@
-import yaml from 'js-yaml';
 import type { Interaction, NodeState } from './types.js';
-import { isInternalLink, normalizeUrl, extractRefIdFromSnapshot } from './utils.js';
+import { isInternalLink, normalizeUrl } from './utils.js';
 import type { BrowserContext, Page } from 'playwright';
-// Removed getSnapshotForAI import since clickByRef-based re-resolution is no longer used
+// Removed getSnapshotForAI import since clickByRef-based re-resolution is now used
 
 // Helper: build a flexible name matching regex (ignores case, tolerates spaces/underscores/hyphens)
 function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null {
@@ -33,76 +32,52 @@ async function capture(page: Page): Promise<NodeState> {
 }
 
 export async function interactionsFromSnapshot(snapshotText: string): Promise<Interaction[]> {
-  let tree: any = {};
-  try {
-    // Accept both YAML and JSON-like text; try YAML first as _snapshotForAI can be textual
-    tree = yaml.load(snapshotText) as any;
-  } catch {
-    tree = {};
-  }
-  const seenKey = new Set<string>();
+  // テキストベースのスナップショットから、[cursor=pointer] かつ [ref=...] を持つ行のみを抽出
   const interactions: Interaction[] = [];
+  const seenRef = new Set<string>();
+  const allowedRoles = new Set(['button', 'link', 'tab', 'menuitem']);
 
-  const traverse = (node: any) => {
-    const role = String(node?.role ?? '').toLowerCase();
-    if (['button', 'link', 'tab', 'menuitem'].includes(role)) {
-      const name = String(node?.name ?? 'unnamed');
-      const key = `${role}::${name}`;
-      if (!seenKey.has(key)) {
-        seenKey.add(key);
-        const ref: string | null = typeof node?.ref === 'string' ? node.ref : extractRefIdFromSnapshot(yaml.dump(node, { noRefs: true }));
-        // href が存在しないが url が入っているスナップショットにも対応
-        const href: string | null = typeof node?.href === 'string' ? node.href : (typeof node?.url === 'string' ? node.url : null);
-        interactions.push({
-          actionType: 'click',
-          role,
-          name,
-          ref,
-          href,
-        });
-      }
+  const lines = snapshotText.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i] ?? '';
+    const line = raw.trim();
+    if (!line.includes('[cursor=pointer]')) continue;
+    if (!line.includes('[ref=')) continue;
+
+    // 例: "- link \"random\" [ref=e49] [cursor=pointer]:"
+    const roleMatch = /^-\s*([A-Za-z]+)\b/.exec(line);
+    const role = (roleMatch?.[1] ?? '').toLowerCase();
+    if (!role) continue;
+    if (!allowedRoles.has(role)) continue;
+
+    const refMatch = /\[\s*ref\s*=\s*([^\]\s]+)\s*\]/i.exec(line);
+    const ref = refMatch?.[1] ?? null;
+    if (!ref || seenRef.has(ref)) continue;
+
+    const nameMatch = /^-\s*[A-Za-z]+\s+"([^"]+)"/.exec(line);
+    const name = nameMatch?.[1] ?? null;
+
+    // 同じブロック内の /url: or href: を拾う（次の同レベルの項目まで）
+    let href: string | null = null;
+    const indentMatch = /^(\s*)-\s/.exec(raw ?? '');
+    const baseIndent = indentMatch?.[1]?.length ?? 0;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const nxtRaw = lines[j] ?? '';
+      const nxtTrim = (nxtRaw ?? '').trim();
+      const nxtIndent = (/^(\s*)-\s/.exec(nxtRaw ?? '')?.[1]?.length) ?? 0;
+      if (nxtTrim.startsWith('-') && nxtIndent <= baseIndent) break;
+      const urlMatch = /(?:href|\/url)\s*:\s*([^\s]+)/i.exec(nxtTrim);
+      if (urlMatch?.[1]) { href = urlMatch[1]; break; }
     }
-    for (const child of node?.children ?? []) traverse(child);
-  };
-  const isTreeLike = tree && (typeof tree === 'object') && ('role' in tree || 'children' in tree);
-  if (isTreeLike)
-    traverse(tree);
-  else
-    extractFromText(snapshotText, interactions, seenKey);
+
+    seenRef.add(ref);
+    interactions.push({ actionType: 'click', role, name, ref, href: href ?? null, refId: null });
+  }
+
   try {
-    console.info(`[interactionsFromSnapshot] extracted ${interactions.length} interactions (unique by role+name).`);
+    console.info(`[interactionsFromSnapshot] extracted ${interactions.length} pointer interactions (unique by ref).`);
   } catch {}
   return interactions;
-}
-
-function extractFromText(snapshotText: string, interactions: Interaction[], seenKey: Set<string>) {
-  const roles = ['button', 'link', 'tab', 'menuitem'];
-  const lines = snapshotText.split(/\r?\n/);
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    for (const role of roles) {
-      if (!lower.includes(role)) continue;
-      // Try to find a reasonable name near the role
-      const nameMatch =
-        /name\s*[:=]\s*"([^"]+)"/.exec(line) ||
-        /name\s*[:=]\s*'([^']+)'/.exec(line) ||
-        new RegExp(role + "[^\"]*\"([^\"]+)\"").exec(line);
-      const name = nameMatch?.[1] ?? 'unnamed';
-      const key = `${role}::${name}`;
-      if (seenKey.has(key)) continue;
-      seenKey.add(key);
-      const ref = extractRefIdFromSnapshot(line);
-      const hrefMatch = /href\s*[:=]\s*['"]([^'"\s]+)['"]/i.exec(line);
-      const href = hrefMatch?.[1] ?? null;
-      interactions.push({
-        actionType: 'click',
-        role,
-        name,
-        ref,
-        href,
-      });
-    }
-  }
 }
 
 export async function processInteraction(
@@ -129,77 +104,111 @@ export async function processInteraction(
     await waitForAppReady(newPage);
 
     const ref = interaction.ref ?? interaction.refId ?? null;
-    const href = interaction.href ?? null;
-    const currentUrl = fromNode.url;
-
-    // 1) href が内部かつ未訪問なら goto を優先
-    if (href) {
-      const targetUrl = normalizeUrl(new URL(href, currentUrl).toString());
-      if (isInternalLink(targetUrl, config.targetUrl)) {
-        if (!config.visitedUrls.has(targetUrl)) {
-          const actionKey = `nav:href:${targetUrl}`;
-          if (!config.triedActions.has(actionKey)) {
-            config.triedActions.add(actionKey);
-            console.info(`[processInteraction] try href navigation -> ${targetUrl} (key=${actionKey})`);
-            await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
-            const newNode = await capture(newPage);
-            console.info(`[processInteraction] href navigation succeeded -> ${newNode.url}`);
-            return newNode;
-          } else {
-            console.info(`[processInteraction] skip href navigation (already tried) key=${actionKey}`);
-            return null;
-          }
-        } else {
-          console.info(`[processInteraction] skip href navigation (already visited) -> ${targetUrl}`);
-          return null;
-        }
-      }
-      // 外部なら href は使わず click にフォールバック
-      console.info(`[processInteraction] href is external, fallback to click. href=${href}`);
-    }
-
-    // 2) getByRole でクリック（名前マッチを緩和し、候補ロールでフォールバック）
-    {
-      const roles = Array.from(new Set([interaction.role ?? 'link', 'link', 'button', 'tab', 'menuitem']));
-      const triedRoles = new Set<string>();
-
-      const nameRegex = buildFlexibleNameRegex(interaction.name);
-      const clickKeyBase = `name:${interaction.name ?? ''}:url:${currentUrl}`;
-
-      for (const role of roles) {
-        if (triedRoles.has(role)) continue;
-        triedRoles.add(role);
-        const options: Parameters<Page['getByRole']>[1] = {} as any;
-        if (nameRegex) (options as any).name = nameRegex;
-        const locator = newPage.getByRole(role as any, options as any);
-
-        const clickKey = `click:role:${role}:${clickKeyBase}`;
-        if (config.triedActions.has(clickKey)) {
-          console.info(`[processInteraction] skip getByRole click (already tried) key=${clickKey}`);
-          continue;
-        }
-        console.info(`[processInteraction] fallback getByRole role=${role} name=${interaction.name ?? ''}`);
-        try {
-          await locator.waitFor({ state: 'visible', timeout: 15000 });
-        } catch {
-          console.warn(`[processInteraction] getByRole did not attach within timeout for role=${role}.`);
-          continue;
-        }
-        config.triedActions.add(clickKey);
-        await locator.first().click();
-        await waitForAppReady(newPage).catch(() => {});
-        const newNode = await capture(newPage);
-        console.info(`[processInteraction] getByRole click produced state -> ${newNode.url}`);
-        return newNode;
-      }
-      console.warn('[processInteraction] getByRole did not find a clickable candidate across role fallbacks. Abandon interaction.');
+    if (!ref) {
+      console.warn('[processInteraction] no ref provided; skip interaction.');
       return null;
     }
+
+    // 1) href ナビゲーションを優先（存在すれば実行）。内部リンクのみ対象。
+    const hrefCandidate = interaction.href ?? findHrefByRef(fromNode.snapshotForAI, ref);
+    if (hrefCandidate) {
+      try {
+        const targetUrl = normalizeUrl(new URL(hrefCandidate, fromNode.url).toString());
+        if (isInternalLink(targetUrl, config.targetUrl)) {
+          const key = `nav:href:${targetUrl}`;
+          if (!config.triedActions.has(key) && !config.visitedUrls.has(targetUrl)) {
+            config.triedActions.add(key);
+            console.info(`[processInteraction] primary href navigation -> ${targetUrl}`);
+            interaction.href = targetUrl;
+            await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
+            const newNode = await capture(newPage);
+            return newNode;
+          }
+        }
+      } catch {}
+      // href が外部/既訪問/既試行などの場合は getByRole にフォールバック
+    }
+
+    // 2) getByRole フォールバック（ref から role/name を再解決）
+    const resolved = findRoleAndNameByRef(fromNode.snapshotForAI, ref);
+    if (!resolved) {
+      console.warn(`[processInteraction] ref ${ref} not resolvable to a pointer role+name; skip.`);
+      return null;
+    }
+    interaction.role = resolved.role;
+    interaction.name = resolved.name;
+    interaction.href = null;
+
+    const nameRegex = buildFlexibleNameRegex(resolved.name);
+    const options: Parameters<Page['getByRole']>[1] = {} as any;
+    if (nameRegex) (options as any).name = nameRegex;
+
+    const clickKey = `click:role:${resolved.role}:name:${resolved.name ?? ''}:url:${fromNode.url}`;
+    if (config.triedActions.has(clickKey)) {
+      console.info(`[processInteraction] skip getByRole click (already tried) key=${clickKey}`);
+      return null;
+    }
+    config.triedActions.add(clickKey);
+
+    const locator = newPage.getByRole(resolved.role as any, options as any);
+    try {
+      await locator.first().waitFor({ state: 'visible', timeout: 15000 });
+    } catch {
+      console.warn(`[processInteraction] getByRole fallback target not visible role=${resolved.role}, name=${resolved.name ?? ''}`);
+      return null;
+    }
+
+    await locator.first().click();
+    await waitForAppReady(newPage).catch(() => {});
+    const newNode = await capture(newPage);
+    console.info(`[processInteraction] getByRole fallback produced state -> ${newNode.url}`);
+    return newNode;
   } catch (e) {
     console.warn('[processInteraction] error:', e);
     return null;
   } finally {
     try { await newPage?.close(); } catch {}
   }
+}
+
+// ref からロールとネームを再解決（[cursor=pointer] の行に限定）
+function findRoleAndNameByRef(snapshotText: string, refId: string): { role: string; name: string | null } | null {
+  const allowedRoles = new Set(['button', 'link', 'tab', 'menuitem']);
+  const lines = snapshotText.split(/\r?\n/);
+  for (const rawItem of lines) {
+    const raw = rawItem ?? '';
+    const line = raw.trim();
+    if (!line.includes(`[ref=${refId}]`)) continue;
+    if (!line.includes('[cursor=pointer]')) return null; // ref はあるが pointer でない
+    const roleMatch = /^-\s*([A-Za-z]+)\b/.exec(line ?? '');
+    const role = (roleMatch?.[1] ?? '').toLowerCase();
+    if (!role) return null;
+    if (!allowedRoles.has(role)) return null;
+    const nameMatch = /^-\s*[A-Za-z]+\s+"([^"]+)"/.exec(line ?? '');
+    const name = nameMatch?.[1] ?? null;
+    return { role, name };
+  }
+  return null;
+}
+
+function findHrefByRef(snapshotText: string, refId: string): string | null {
+  const lines = snapshotText.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i] ?? '';
+    const line = (raw ?? '').trim();
+    if (!line.includes(`[ref=${refId}]`)) continue;
+    const indentMatch = /^(\s*)-\s/.exec(raw ?? '');
+    const baseIndent = indentMatch?.[1]?.length ?? 0;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const nxtRaw = lines[j] ?? '';
+      const nxtTrim = (nxtRaw ?? '').trim();
+      const nxtIndent = (/^(\s*)-\s/.exec(nxtRaw ?? '')?.[1]?.length) ?? 0;
+      if (nxtTrim.startsWith('-') && nxtIndent <= baseIndent) break;
+      const urlMatch = /(?:href|\/url)\s*:\s*([^\s]+)/i.exec(nxtTrim);
+      if (urlMatch?.[1]) return urlMatch[1];
+    }
+    break;
+  }
+  return null;
 }
 

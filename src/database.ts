@@ -49,11 +49,14 @@ export async function createRelation(
   driver: Driver,
   fromNode: NodeState,
   toNode: NodeState,
-  interaction: Pick<Interaction, 'actionType' | 'ref' | 'refId'>
+  interaction: Pick<Interaction, 'actionType' | 'ref' | 'refId' | 'href' | 'role' | 'name'>
 ): Promise<void> {
   const relType = 'CLICK_TO';
   const actionType = interaction.actionType ?? 'click';
-  const refId = interaction.ref ?? interaction.refId ?? extractRefIdFromSnapshot(fromNode.snapshotForAI) ?? null;
+  const ref = interaction.ref ?? interaction.refId ?? extractRefIdFromSnapshot(fromNode.snapshotForAI) ?? '';
+  const href = interaction.href ?? '';
+  const role = interaction.role ?? '';
+  const name = interaction.name ?? '';
 
   const session = driver.session();
   try {
@@ -62,12 +65,18 @@ export async function createRelation(
        MATCH (b:Page {url: $to_url})
        MERGE (a)-[r:${relType}]->(b)
        SET r.action_type = $action_type,
-           r.ref_id = $ref_id`,
+           r.ref = $ref,
+           r.href = $href,
+           r.role = $role,
+           r.name = $name`,
       {
         from_url: fromNode.url,
         to_url: toNode.url,
         action_type: actionType,
-        ref_id: refId,
+        ref,
+        href,
+        role,
+        name,
       },
     );
   } finally {
