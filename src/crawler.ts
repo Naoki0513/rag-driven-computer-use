@@ -60,6 +60,11 @@ export class WebCrawler {
 
       const exhaustive = !!this.config.exhaustive;
       while (this.queue.length > 0) {
+        // Stop gracefully if context is gone
+        if (!this.context || (typeof (this.context as any).isClosed === 'function' && (this.context as any).isClosed())) {
+          console.info('Browser context closed; stopping crawl loop.');
+          break;
+        }
         // Early stop if discovery stagnates significantly
         if (!exhaustive && this.noDiscoveryStreak >= Math.max(3, Math.ceil(this.config.maxDepth / 2))) {
           console.info(`Early stop due to saturation. No new pages discovered in ${this.noDiscoveryStreak} iterations.`);
@@ -72,11 +77,28 @@ export class WebCrawler {
         const current = this.queue.shift()!;
         if (!exhaustive && current.depth >= this.config.maxDepth) continue;
 
-        await page.goto(current.node.url, { waitUntil: 'networkidle' });
-        await page.waitForTimeout(5000);
+        // Ensure main page is open
+        if (page.isClosed()) {
+          console.info('Main page closed; stopping crawl loop.');
+          break;
+        } else {
+          try {
+            await page.goto(current.node.url, { waitUntil: 'networkidle' });
+            await page.waitForTimeout(5000);
+          } catch (e) {
+            const msg = String((e as Error)?.message ?? '');
+            if (msg.includes('Target page') || msg.includes('has been closed')) {
+              console.info('Main page was closed; stopping crawl loop gracefully.');
+              break;
+            }
+            // non-fatal navigation issues: skip this state
+            console.warn('Navigation failed, skipping state:', msg);
+            continue;
+          }
+        }
 
-        const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
-        const tasks = interactions.slice(0, 50).map((interaction) => async () => {
+         const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
+          const tasks = interactions.slice(0, 50).map((interaction) => async () => {
           if (!this.context) return null;
           const newNode = await processInteraction(this.context, current.node, interaction, {
             ...this.config,
@@ -102,14 +124,14 @@ export class WebCrawler {
         else this.noDiscoveryStreak = 0;
       }
     } finally {
-      await page.close();
+      try { await page.close(); } catch {}
       console.info(`Crawl completed! Total states: ${visitedCount}`);
     }
   }
 
   private async captureAndStore(page: Page): Promise<NodeState> {
     const { captureNode } = await import('./snapshots.js');
-    const node = await captureNode(page, { maxHtmlSize: this.config.maxHtmlSize });
+    const node = await captureNode(page);
     try {
       const preview = node.snapshotForAI.slice(0, 200).replace(/\s+/g, ' ');
       console.info(`[snapshotForAI] ${preview}${node.snapshotForAI.length > 200 ? '…' : ''}`);
@@ -121,7 +143,11 @@ export class WebCrawler {
   private async storeNodeAndEdge(fromNode: NodeState, newNode: NodeState, interaction: Interaction): Promise<void> {
     if (!this.driver) return;
     await saveNode(this.driver, newNode);
-    await createRelation(this.driver, fromNode, newNode, { actionType: interaction.actionType, refId: interaction.refId ?? null });
+    await createRelation(this.driver, fromNode, newNode, {
+      actionType: interaction.actionType,
+      ref: interaction.ref ?? null,
+      refId: interaction.refId ?? null,
+    });
   }
 
   private async login(page: Page): Promise<void> {
@@ -163,4 +189,5 @@ export class WebCrawler {
     }
   }
 }
+
 

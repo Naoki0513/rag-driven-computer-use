@@ -49,11 +49,11 @@ export async function createRelation(
   driver: Driver,
   fromNode: NodeState,
   toNode: NodeState,
-  interaction: Pick<Interaction, 'actionType' | 'refId'>
+  interaction: Pick<Interaction, 'actionType' | 'ref' | 'refId'>
 ): Promise<void> {
   const relType = 'CLICK_TO';
   const actionType = interaction.actionType ?? 'click';
-  const refId = interaction.refId ?? extractRefIdFromSnapshot(fromNode.snapshotForAI) ?? null;
+  const refId = interaction.ref ?? interaction.refId ?? extractRefIdFromSnapshot(fromNode.snapshotForAI) ?? null;
 
   const session = driver.session();
   try {

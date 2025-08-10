@@ -8,16 +8,14 @@ export interface NodeState {
 export type ActionType = 'click' | 'input' | 'select' | 'navigate' | 'submit';
 
 export interface Interaction {
-  selector: string | null;
-  text: string;
   actionType: ActionType;
-  href?: string | null;
   role?: string | null;
   name?: string | null;
-  inputValue?: string | null;
-  selectedValue?: string | null;
-  formId?: string | null;
-  // Extracted from snapshot_for_ai if available
+  // Primary key to operate elements. Prefer this over any selector.
+  ref?: string | null;
+  // Optional href if provided by snapshotForAI for link-like elements
+  href?: string | null;
+  // Backward compatibility: some paths may still set refId
   refId?: string | null;
 }
 

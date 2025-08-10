@@ -33,8 +33,6 @@ const schema = z.object({
   maxDepth: z.coerce.number().int().positive().default(Number(env.MAX_DEPTH ?? 20)),
   parallelTasks: z.coerce.number().int().positive().default(Number(env.PARALLEL_TASKS ?? 8)),
 
-  maxHtmlSize: z.coerce.number().int().positive().default(Number(env.MAX_HTML_SIZE ?? 100 * 1024)),
-  maxAriaContextSize: z.coerce.number().int().positive().default(Number(env.MAX_ARIA_CONTEXT_SIZE ?? 2 * 1024)),
 
   headful: z.coerce.boolean().default(env.HEADFUL !== undefined ? env.HEADFUL === 'true' : false),
   clearDb: z.coerce.boolean().default(env.CLEAR_DB !== undefined ? env.CLEAR_DB === 'true' : true),
@@ -54,8 +52,6 @@ export function loadConfig(): AppConfig {
     maxStates: cli.limit ?? env.MAX_STATES,
     maxDepth: cli.depth ?? env.MAX_DEPTH,
     parallelTasks: cli.parallel ?? env.PARALLEL_TASKS,
-    maxHtmlSize: env.MAX_HTML_SIZE,
-    maxAriaContextSize: env.MAX_ARIA_CONTEXT_SIZE,
     headful: cli.headful ?? env.HEADFUL,
     clearDb: cli['no-clear'] ? false : env.CLEAR_DB,
     exhaustive: cli.exhaustive ?? env.EXHAUSTIVE,

@@ -1,5 +1,5 @@
 import { loadConfig } from './config.js';
-import { WebCrawler } from './engine.js';
+import { WebCrawler } from './crawler.js';
 
 async function main() {
   const config = loadConfig();
