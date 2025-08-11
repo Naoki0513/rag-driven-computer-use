@@ -84,7 +84,7 @@ export async function processInteraction(
   context: BrowserContext,
   fromNode: NodeState,
   interaction: Interaction,
-  config: { parallelTasks: number; targetUrl: string; visitedUrls?: Set<string>; triedActions?: Set<string> }
+  config: { parallelTasks: number; targetUrl: string; visitedHashes?: Set<string>; triedActions?: Set<string> }
 ): Promise<NodeState | null> {
   if (!context || (typeof (context as any).isClosed === 'function' && (context as any).isClosed())) return null;
   let newPage: Page | null = null;
@@ -96,7 +96,7 @@ export async function processInteraction(
   try {
     // Normalize optional sets so we can add without guards
     if (!config.triedActions) config.triedActions = new Set<string>();
-    if (!config.visitedUrls) config.visitedUrls = new Set<string>();
+    if (!config.visitedHashes) config.visitedHashes = new Set<string>();
 
     const debugId = `${interaction.role ?? 'unknown-role'}::${interaction.name ?? 'unnamed'}::${interaction.ref ?? interaction.refId ?? 'no-ref'}`;
     const fromUrl = buildUrl(fromNode.site, fromNode.route);
@@ -116,14 +116,17 @@ export async function processInteraction(
       try {
         const targetUrl = normalizeUrl(new URL(hrefCandidate, fromUrl).toString());
         if (isInternalLink(targetUrl, config.targetUrl)) {
-          const key = `nav:href:${targetUrl}`;
-          if (!config.triedActions.has(key) && !config.visitedUrls.has(targetUrl)) {
+          const key = `nav:href:${fromNode.snapshotHash}:${targetUrl}`;
+          if (!config.triedActions.has(key)) {
             config.triedActions.add(key);
             console.info(`[processInteraction] primary href navigation -> ${targetUrl}`);
             interaction.href = targetUrl;
             await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
             const newNode = await capture(newPage);
-            return newNode;
+            if (!config.visitedHashes.has(newNode.snapshotHash)) {
+              return newNode;
+            }
+            return null;
           }
         }
       } catch {}
@@ -144,7 +147,7 @@ export async function processInteraction(
     const options: Parameters<Page['getByRole']>[1] = {} as any;
     if (nameRegex) (options as any).name = nameRegex;
 
-    const clickKey = `click:role:${resolved.role}:name:${resolved.name ?? ''}:url:${fromUrl}`;
+    const clickKey = `click:role:${resolved.role}:name:${resolved.name ?? ''}:fromHash:${fromNode.snapshotHash}`;
     if (config.triedActions.has(clickKey)) {
       console.info(`[processInteraction] skip getByRole click (already tried) key=${clickKey}`);
       return null;

@@ -9,7 +9,7 @@ export class WebCrawler {
   private config: any;
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
-  private visitedStates = new Set<string>();
+  private visitedHashes = new Set<string>();
   private queue: QueueItem[] = [];
   private driver: import('neo4j-driver').Driver | null = null;
   private triedActions = new Set<string>();
@@ -45,16 +45,16 @@ export class WebCrawler {
     try {
       await page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
       const preLoginNode = await this.captureAndStore(page);
-      this.visitedStates.add(normalizeUrl(buildUrl(preLoginNode.site, preLoginNode.route)));
+      this.visitedHashes.add(preLoginNode.snapshotHash);
       visitedCount += 1;
 
       await this.login(page);
 
       const postLoginNode = await this.captureAndStore(page);
-    if (this.driver) {
+      if (this.driver) {
         await createRelation(this.driver, preLoginNode, postLoginNode, { actionType: 'submit', ref: null, href: null, role: null, name: null });
       }
-      this.visitedStates.add(normalizeUrl(buildUrl(postLoginNode.site, postLoginNode.route)));
+      this.visitedHashes.add(postLoginNode.snapshotHash);
       this.queue.push({ node: postLoginNode, depth: 0 });
       visitedCount += 1;
 
@@ -104,14 +104,14 @@ export class WebCrawler {
           if (!this.context) return null;
           const newNode = await processInteraction(this.context, current.node, interaction, {
             ...this.config,
-            visitedUrls: this.visitedStates,
+            visitedHashes: this.visitedHashes,
             triedActions: this.triedActions,
           });
            if (newNode) {
-             const normalized = normalizeUrl(buildUrl(newNode.site, newNode.route));
-            if (!this.visitedStates.has(normalized)) {
+             const hash = newNode.snapshotHash;
+            if (!this.visitedHashes.has(hash)) {
                await this.storeNodeAndEdge(current.node, newNode, interaction);
-                this.visitedStates.add(normalizeUrl(buildUrl(newNode.site, newNode.route)));
+                this.visitedHashes.add(hash);
               this.queue.push({ node: newNode, depth: current.depth + 1 });
               visitedCount += 1;
               this.noDiscoveryStreak = 0;

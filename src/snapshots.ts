@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import yaml from 'js-yaml';
 import type { NodeState } from './types.js';
 import { parseSiteAndRoute } from './utils.js';
+import { computeSha256Hex } from './utils.js';
 
 export async function captureNode(page: Page): Promise<NodeState> {
   await page.waitForLoadState('networkidle').catch(() => {});
@@ -11,11 +12,13 @@ export async function captureNode(page: Page): Promise<NodeState> {
   // Only store minimal fields as requested
   const snapshotForAI = await getSnapshotForAI(page);
   const { site, route } = parseSiteAndRoute(url);
+  const snapshotHash = computeSha256Hex(snapshotForAI);
 
   return {
     site,
     route,
     snapshotForAI,
+    snapshotHash,
     timestamp: new Date().toISOString(),
   };
 }

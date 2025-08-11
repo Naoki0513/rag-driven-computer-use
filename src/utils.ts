@@ -1,4 +1,5 @@
 import { URL } from 'node:url';
+import { createHash } from 'node:crypto';
 
 export function isInternalLink(targetUrl: string, baseUrl: string): boolean {
   try {
@@ -83,5 +84,19 @@ export async function gatherWithBatches<T>(tasks: Array<() => Promise<T>>, batch
     }
   }
   return results;
+}
+
+// Compute deterministic SHA-256 hex for snapshot text
+export function computeSha256Hex(text: string): string {
+  try {
+    return createHash('sha256').update(text, 'utf8').digest('hex');
+  } catch {
+    // Extremely unlikely to fail; fall back to simple hash
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    }
+    return `fallback_${hash.toString(16)}`;
+  }
 }
 

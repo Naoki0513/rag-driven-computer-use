@@ -21,6 +21,7 @@ export async function initDatabase(driver: Driver): Promise<void> {
       // ignore
     }
     await session.run('MATCH (n) DETACH DELETE n');
+    await session.run('CREATE CONSTRAINT node_state_hash IF NOT EXISTS FOR (n:Page) REQUIRE n.snapshot_hash IS UNIQUE');
     await session.run('CREATE INDEX node_site_route IF NOT EXISTS FOR (n:Page) ON (n.site, n.route)');
   } finally {
     await session.close();
@@ -31,10 +32,13 @@ export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
   const session = driver.session();
   try {
     await session.run(
-      `MERGE (n:Page {site: $site, route: $route})
-       SET n.snapshot_for_ai = $snapshot_for_ai,
+      `MERGE (n:Page {snapshot_hash: $snapshot_hash})
+       SET n.site = $site,
+           n.route = $route,
+           n.snapshot_for_ai = $snapshot_for_ai,
            n.timestamp = $timestamp`,
       {
+        snapshot_hash: node.snapshotHash,
         site: node.site,
         route: node.route,
         snapshot_for_ai: node.snapshotForAI,
@@ -59,11 +63,16 @@ export async function createRelation(
   const role = interaction.role ?? '';
   const name = interaction.name ?? '';
 
+  if (fromNode.snapshotHash === toNode.snapshotHash) {
+    // avoid self-loop by identical snapshot; nothing to create
+    return;
+  }
+
   const session = driver.session();
   try {
     await session.run(
-      `MATCH (a:Page {site: $from_site, route: $from_route})
-       MATCH (b:Page {site: $to_site, route: $to_route})
+      `MATCH (a:Page {snapshot_hash: $from_hash})
+       MATCH (b:Page {snapshot_hash: $to_hash})
        MERGE (a)-[r:${relType}]->(b)
        SET r.action_type = $action_type,
            r.ref = $ref,
@@ -71,10 +80,8 @@ export async function createRelation(
            r.role = $role,
            r.name = $name`,
       {
-        from_site: fromNode.site,
-        from_route: fromNode.route,
-        to_site: toNode.site,
-        to_route: toNode.route,
+        from_hash: fromNode.snapshotHash,
+        to_hash: toNode.snapshotHash,
         action_type: actionType,
         ref,
         href,
