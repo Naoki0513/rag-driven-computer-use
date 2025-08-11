@@ -98,20 +98,20 @@ export class WebCrawler {
           }
         }
 
-          const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
-          // 1ページあたり全要素を対象にする（並列度は parallelTasks で制御）
-          const tasks = interactions.map((interaction) => async () => {
+        const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
+        // 1ページあたり全要素を対象にする（並列度は parallelTasks で制御）
+        const tasks = interactions.map((interaction) => async () => {
           if (!this.context) return null;
           const newNode = await processInteraction(this.context, current.node, interaction, {
             ...this.config,
             visitedHashes: this.visitedHashes,
             triedActions: this.triedActions,
           });
-           if (newNode) {
-             const hash = newNode.snapshotHash;
+          if (newNode) {
+            const hash = newNode.snapshotHash;
             if (!this.visitedHashes.has(hash)) {
-               await this.storeNodeAndEdge(current.node, newNode, interaction);
-                this.visitedHashes.add(hash);
+              await this.storeNodeAndEdge(current.node, newNode, interaction);
+              this.visitedHashes.add(hash);
               this.queue.push({ node: newNode, depth: current.depth + 1 });
               visitedCount += 1;
               this.noDiscoveryStreak = 0;

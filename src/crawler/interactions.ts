@@ -1,19 +1,14 @@
 import type { Interaction, NodeState } from './types.js';
 import { isInternalLink, normalizeUrl, buildUrl } from './utils.js';
 import type { BrowserContext, Page } from 'playwright';
-// Removed getSnapshotForAI import since clickByRef-based re-resolution is now used
 
-// Helper: build a flexible name matching regex (ignores case, tolerates spaces/underscores/hyphens)
 function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null {
   if (!name) return null;
   const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const flexible = escaped
-    .replace(/[_\s]+/g, '\\s*')
-    .replace(/-+/g, '[-\\s_]*');
+  const flexible = escaped.replace(/[_\s]+/g, '\\s*').replace(/-+/g, '[-\\s_]*');
   return new RegExp(flexible, 'i');
 }
 
-// Helper: smarter readiness wait than fixed timeout
 async function waitForAppReady(page: Page): Promise<void> {
   try {
     await page.waitForLoadState('networkidle', { timeout: 10000 as any });
@@ -25,14 +20,12 @@ async function waitForAppReady(page: Page): Promise<void> {
   await page.waitForTimeout(1000);
 }
 
-// Helper: unify snapshot capture (lazy dynamic import)
 async function capture(page: Page): Promise<NodeState> {
   const { captureNode } = await import('./snapshots.js');
   return captureNode(page);
 }
 
 export async function interactionsFromSnapshot(snapshotText: string): Promise<Interaction[]> {
-  // テキストベースのスナップショットから、[cursor=pointer] かつ [ref=...] を持つ行のみを抽出
   const interactions: Interaction[] = [];
   const seenRef = new Set<string>();
   const allowedRoles = new Set(['button', 'link', 'tab', 'menuitem']);
@@ -44,7 +37,6 @@ export async function interactionsFromSnapshot(snapshotText: string): Promise<In
     if (!line.includes('[cursor=pointer]')) continue;
     if (!line.includes('[ref=')) continue;
 
-    // 例: "- link \"random\" [ref=e49] [cursor=pointer]:"
     const roleMatch = /^-\s*([A-Za-z]+)\b/.exec(line);
     const role = (roleMatch?.[1] ?? '').toLowerCase();
     if (!role) continue;
@@ -57,7 +49,6 @@ export async function interactionsFromSnapshot(snapshotText: string): Promise<In
     const nameMatch = /^-\s*[A-Za-z]+\s+"([^"]+)"/.exec(line);
     const name = nameMatch?.[1] ?? null;
 
-    // 同じブロック内の /url: or href: を拾う（次の同レベルの項目まで）
     let href: string | null = null;
     const indentMatch = /^(\s*)-\s/.exec(raw ?? '');
     const baseIndent = indentMatch?.[1]?.length ?? 0;
@@ -94,7 +85,6 @@ export async function processInteraction(
     return null;
   }
   try {
-    // Normalize optional sets so we can add without guards
     if (!config.triedActions) config.triedActions = new Set<string>();
     if (!config.visitedHashes) config.visitedHashes = new Set<string>();
 
@@ -110,7 +100,6 @@ export async function processInteraction(
       return null;
     }
 
-    // 1) href ナビゲーションを優先（存在すれば実行）。内部リンクのみ対象。
     const hrefCandidate = interaction.href ?? findHrefByRef(fromNode.snapshotForAI, ref);
     if (hrefCandidate) {
       try {
@@ -130,10 +119,8 @@ export async function processInteraction(
           }
         }
       } catch {}
-      // href が外部/既訪問/既試行などの場合は getByRole にフォールバック
     }
 
-    // 2) getByRole フォールバック（ref から role/name を再解決）
     const resolved = findRoleAndNameByRef(fromNode.snapshotForAI, ref);
     if (!resolved) {
       console.warn(`[processInteraction] ref ${ref} not resolvable to a pointer role+name; skip.`);
@@ -175,7 +162,6 @@ export async function processInteraction(
   }
 }
 
-// ref からロールとネームを再解決（[cursor=pointer] の行に限定）
 function findRoleAndNameByRef(snapshotText: string, refId: string): { role: string; name: string | null } | null {
   const allowedRoles = new Set(['button', 'link', 'tab', 'menuitem']);
   const lines = snapshotText.split(/\r?\n/);
@@ -183,7 +169,7 @@ function findRoleAndNameByRef(snapshotText: string, refId: string): { role: stri
     const raw = rawItem ?? '';
     const line = raw.trim();
     if (!line.includes(`[ref=${refId}]`)) continue;
-    if (!line.includes('[cursor=pointer]')) return null; // ref はあるが pointer でない
+    if (!line.includes('[cursor=pointer]')) return null;
     const roleMatch = /^-\s*([A-Za-z]+)\b/.exec(line ?? '');
     const role = (roleMatch?.[1] ?? '').toLowerCase();
     if (!role) return null;
@@ -215,4 +201,5 @@ function findHrefByRef(snapshotText: string, refId: string): string | null {
   }
   return null;
 }
+
 
