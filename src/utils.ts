@@ -35,6 +35,26 @@ export function normalizeUrl(inputUrl: string): string {
   }
 }
 
+// Parse a full URL into site (origin) and route (pathname + sorted query), dropping hash
+export function parseSiteAndRoute(inputUrl: string): { site: string; route: string } {
+  try {
+    const url = new URL(normalizeUrl(inputUrl));
+    const origin = `${url.protocol}//${url.host}`;
+    const route = `${url.pathname}${url.search}` || '/';
+    return { site: origin, route: route || '/' };
+  } catch {
+    // Fallback: treat whole as route under empty site
+    return { site: '', route: inputUrl };
+  }
+}
+
+// Build a full URL string from site (origin) and route (path + query)
+export function buildUrl(site: string, route: string): string {
+  const cleanSite = site.replace(/\/$/, '');
+  const cleanRoute = route.startsWith('/') ? route : `/${route}`;
+  return normalizeUrl(`${cleanSite}${cleanRoute}`);
+}
+
 // Extract first ref id from textual snapshot_for_ai content.
 // Supports formats like: "[ref=abc123]", "ref: abc123", "ref: 'abc123'", "ref: \"abc123\""
 export function extractRefIdFromSnapshot(snapshotText: string): string | null {

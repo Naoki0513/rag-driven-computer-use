@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import yaml from 'js-yaml';
 import type { NodeState } from './types.js';
+import { parseSiteAndRoute } from './utils.js';
 
 export async function captureNode(page: Page): Promise<NodeState> {
   await page.waitForLoadState('networkidle').catch(() => {});
@@ -9,9 +10,11 @@ export async function captureNode(page: Page): Promise<NodeState> {
   const url = page.url();
   // Only store minimal fields as requested
   const snapshotForAI = await getSnapshotForAI(page);
+  const { site, route } = parseSiteAndRoute(url);
 
   return {
-    url,
+    site,
+    route,
     snapshotForAI,
     timestamp: new Date().toISOString(),
   };

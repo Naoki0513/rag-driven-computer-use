@@ -1,5 +1,5 @@
 import type { Interaction, NodeState } from './types.js';
-import { isInternalLink, normalizeUrl } from './utils.js';
+import { isInternalLink, normalizeUrl, buildUrl } from './utils.js';
 import type { BrowserContext, Page } from 'playwright';
 // Removed getSnapshotForAI import since clickByRef-based re-resolution is now used
 
@@ -99,8 +99,9 @@ export async function processInteraction(
     if (!config.visitedUrls) config.visitedUrls = new Set<string>();
 
     const debugId = `${interaction.role ?? 'unknown-role'}::${interaction.name ?? 'unnamed'}::${interaction.ref ?? interaction.refId ?? 'no-ref'}`;
-    console.info(`[processInteraction] start for ${debugId} at ${fromNode.url}`);
-    await newPage.goto(fromNode.url, { waitUntil: 'domcontentloaded' });
+    const fromUrl = buildUrl(fromNode.site, fromNode.route);
+    console.info(`[processInteraction] start for ${debugId} at ${fromUrl}`);
+    await newPage.goto(fromUrl, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(newPage);
 
     const ref = interaction.ref ?? interaction.refId ?? null;
@@ -113,7 +114,7 @@ export async function processInteraction(
     const hrefCandidate = interaction.href ?? findHrefByRef(fromNode.snapshotForAI, ref);
     if (hrefCandidate) {
       try {
-        const targetUrl = normalizeUrl(new URL(hrefCandidate, fromNode.url).toString());
+        const targetUrl = normalizeUrl(new URL(hrefCandidate, fromUrl).toString());
         if (isInternalLink(targetUrl, config.targetUrl)) {
           const key = `nav:href:${targetUrl}`;
           if (!config.triedActions.has(key) && !config.visitedUrls.has(targetUrl)) {
@@ -143,7 +144,7 @@ export async function processInteraction(
     const options: Parameters<Page['getByRole']>[1] = {} as any;
     if (nameRegex) (options as any).name = nameRegex;
 
-    const clickKey = `click:role:${resolved.role}:name:${resolved.name ?? ''}:url:${fromNode.url}`;
+    const clickKey = `click:role:${resolved.role}:name:${resolved.name ?? ''}:url:${fromUrl}`;
     if (config.triedActions.has(clickKey)) {
       console.info(`[processInteraction] skip getByRole click (already tried) key=${clickKey}`);
       return null;
@@ -161,7 +162,7 @@ export async function processInteraction(
     await locator.first().click();
     await waitForAppReady(newPage).catch(() => {});
     const newNode = await capture(newPage);
-    console.info(`[processInteraction] getByRole fallback produced state -> ${newNode.url}`);
+    console.info(`[processInteraction] getByRole fallback produced state -> ${buildUrl(newNode.site, newNode.route)}`);
     return newNode;
   } catch (e) {
     console.warn('[processInteraction] error:', e);

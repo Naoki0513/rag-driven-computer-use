@@ -1,6 +1,7 @@
 export interface NodeState {
-  // Stored in Neo4j node properties as: url, snapshot_for_ai, timestamp
-  url: string;
+  // Stored in Neo4j node properties as: site, route, snapshot_for_ai, timestamp
+  site: string; // origin (e.g., http://example.com:3000)
+  route: string; // path + sorted querystring without hash (e.g., /foo/bar?b=1&a=2)
   snapshotForAI: string; // textual snapshot (may include [ref=...])
   timestamp: string; // ISO string
 }

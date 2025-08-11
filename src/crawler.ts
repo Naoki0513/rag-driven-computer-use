@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Page } from 'playwright';
 import { createDriver, initDatabase, saveNode, createRelation, closeDriver } from './database.js';
 import type { NodeState, QueueItem, Interaction } from './types.js';
 import { interactionsFromSnapshot, processInteraction } from './interactions.js';
-import { gatherWithBatches, normalizeUrl } from './utils.js';
+import { gatherWithBatches, normalizeUrl, buildUrl } from './utils.js';
 
 export class WebCrawler {
   private config: any;
@@ -45,7 +45,7 @@ export class WebCrawler {
     try {
       await page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
       const preLoginNode = await this.captureAndStore(page);
-      this.visitedStates.add(normalizeUrl(preLoginNode.url));
+      this.visitedStates.add(normalizeUrl(buildUrl(preLoginNode.site, preLoginNode.route)));
       visitedCount += 1;
 
       await this.login(page);
@@ -54,7 +54,7 @@ export class WebCrawler {
     if (this.driver) {
         await createRelation(this.driver, preLoginNode, postLoginNode, { actionType: 'submit', ref: null, href: null, role: null, name: null });
       }
-      this.visitedStates.add(normalizeUrl(postLoginNode.url));
+      this.visitedStates.add(normalizeUrl(buildUrl(postLoginNode.site, postLoginNode.route)));
       this.queue.push({ node: postLoginNode, depth: 0 });
       visitedCount += 1;
 
@@ -83,7 +83,8 @@ export class WebCrawler {
           break;
         } else {
           try {
-            await page.goto(current.node.url, { waitUntil: 'networkidle' });
+            const currentUrl = buildUrl(current.node.site, current.node.route);
+            await page.goto(currentUrl, { waitUntil: 'networkidle' });
             await page.waitForTimeout(5000);
           } catch (e) {
             const msg = String((e as Error)?.message ?? '');
@@ -107,10 +108,10 @@ export class WebCrawler {
             triedActions: this.triedActions,
           });
            if (newNode) {
-             const normalized = normalizeUrl(newNode.url);
+             const normalized = normalizeUrl(buildUrl(newNode.site, newNode.route));
             if (!this.visitedStates.has(normalized)) {
                await this.storeNodeAndEdge(current.node, newNode, interaction);
-               this.visitedStates.add(normalizeUrl(newNode.url));
+                this.visitedStates.add(normalizeUrl(buildUrl(newNode.site, newNode.route)));
               this.queue.push({ node: newNode, depth: current.depth + 1 });
               visitedCount += 1;
               this.noDiscoveryStreak = 0;
