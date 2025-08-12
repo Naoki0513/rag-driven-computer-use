@@ -1,9 +1,10 @@
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
-import { createDriver, initDatabase, saveNode, createRelation, closeDriver } from './database.js';
-import type { NodeState, QueueItem, Interaction } from './types.js';
+import { createDriver, initDatabase, saveNode, createRelation, closeDriver } from '../utilities/neo4j.js';
+import type { NodeState, QueueItem, Interaction } from '../utilities/types.js';
 import { interactionsFromSnapshot, processInteraction } from './interactions.js';
-import { gatherWithBatches, normalizeUrl, buildUrl } from './utils.js';
+import { gatherWithBatches } from '../utilities/async.js';
+import { normalizeUrl, buildUrl } from '../utilities/url.js';
 
 export class WebCrawler {
   private config: any;
@@ -132,7 +133,7 @@ export class WebCrawler {
   }
 
   private async captureAndStore(page: Page): Promise<NodeState> {
-    const { captureNode } = await import('./snapshots.js');
+    const { captureNode } = await import('../utilities/snapshots.js');
     const node = await captureNode(page);
     try {
       const preview = node.snapshotForAI.slice(0, 200).replace(/\s+/g, ' ');

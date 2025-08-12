@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import type { Driver } from 'neo4j-driver';
-import { createDriver, closeDriver } from '../crawler/database.js';
+import { createDriver, closeDriver } from '../utilities/neo4j.js';
 
 export async function runCypher(query: string): Promise<string> {
   const uri = process.env.NEO4J_URI;

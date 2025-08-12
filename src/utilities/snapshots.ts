@@ -1,8 +1,8 @@
 import type { Page } from 'playwright';
 import yaml from 'js-yaml';
 import type { NodeState } from './types.js';
-import { parseSiteAndRoute } from './utils.js';
-import { computeSha256Hex } from './utils.js';
+import { parseSiteAndRoute } from './url.js';
+import { computeSha256Hex } from './text.js';
 
 export async function captureNode(page: Page): Promise<NodeState> {
   await page.waitForLoadState('networkidle').catch(() => {});

@@ -1,5 +1,5 @@
-import type { Interaction, NodeState } from './types.js';
-import { isInternalLink, normalizeUrl, buildUrl } from './utils.js';
+import type { Interaction, NodeState } from '../utilities/types.js';
+import { isInternalLink, normalizeUrl, buildUrl } from '../utilities/url.js';
 import type { BrowserContext, Page } from 'playwright';
 
 function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null {
@@ -21,7 +21,7 @@ async function waitForAppReady(page: Page): Promise<void> {
 }
 
 async function capture(page: Page): Promise<NodeState> {
-  const { captureNode } = await import('./snapshots.js');
+  const { captureNode } = await import('../utilities/snapshots.js');
   return captureNode(page);
 }
 
