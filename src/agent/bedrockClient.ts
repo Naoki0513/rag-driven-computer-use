@@ -70,6 +70,7 @@ export async function converseLoop(
   region: string,
 ): Promise<ConverseLoopResult> {
   const client = new BedrockRuntimeClient({ region });
+  console.log(`[OK] AIモデルを初期化しました (region=${region}, model=${modelId})`);
   const lowerId = modelId.toLowerCase();
   const isClaude = lowerId.includes('claude');
   const isNova = lowerId.includes('nova');
@@ -110,6 +111,7 @@ export async function converseLoop(
         const msg = String(e?.name || e?.message || e);
         if (!/Throttling/i.test(msg) || attempt === maxRetries) throw e;
         const backoffMs = Math.min(60000, 15000 * Math.pow(2, attempt));
+        console.log(`Throttlingエラーが発生しました。${Math.round(backoffMs / 1000)}秒待機してリトライします... (試行 ${attempt + 1}/${maxRetries + 1})`);
         await new Promise((r) => setTimeout(r, backoffMs));
         attempt += 1;
       }
@@ -141,15 +143,22 @@ export async function converseLoop(
         const toolUseId = (toolUse as any).toolUseId as string;
         if (name === 'run_cypher') {
           const q = (toolUse as any).input?.query ?? '';
+          console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
           const result = await runCypher(String(q));
+          console.log(`Tool result (run_cypher): ${result}`);
           toolResults.push({ toolResult: { toolUseId, content: [{ text: result }], status: 'success' } });
         } else if (name === 'execute_workflow') {
           const wf = (toolUse as any).input?.workflow ?? [];
+          console.log(`Executing workflow: ${JSON.stringify(wf, null, 2)}`);
           const result = await executeWorkflow(wf);
+          console.log(`Tool result (execute_workflow): ${result.substring(0, 1000)}${result.length > 1000 ? '...': ''}`);
           toolResults.push({ toolResult: { toolUseId, content: [{ text: result }], status: 'success' } });
         }
       }
-      if (toolResults.length) messages.push({ role: 'user', content: toolResults });
+      if (toolResults.length) {
+        console.log(`Adding tool results to messages: ${JSON.stringify(toolResults)}`);
+        messages.push({ role: 'user', content: toolResults });
+      }
       continue;
     }
     if (stopReason === 'max_tokens') {

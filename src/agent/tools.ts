@@ -44,6 +44,29 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
   const results: string[] = [];
   const snapshots: string[] = [];
   try {
+    // Optional pre-login flow to align with Python implementation
+    const domain = process.env.BROWSER_DOMAIN;
+    const username = process.env.BROWSER_USERNAME;
+    const password = process.env.BROWSER_PASSWORD;
+    if (domain && username && password) {
+      try {
+        console.log(`[Login] ${domain} にアクセスしてログインを試行します`);
+        await page.goto(domain);
+        await page.waitForLoadState('networkidle').catch(() => {});
+        const loginInput = await page.$('input[name="emailOrUsername"]');
+        if (loginInput) await loginInput.fill(username);
+        const pwInput = await page.$('input[type="password"]');
+        if (pwInput) await pwInput.fill(password);
+        const submit = await page.$('button.login');
+        if (submit) await submit.click();
+        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(5000).catch(() => {});
+        results.push('Pre-login succeeded');
+      } catch (e: any) {
+        results.push(`Pre-login failed: ${String(e?.message ?? e)}`);
+      }
+    }
+
     for (let i = 0; i < workflow.length; i += 1) {
       const step = workflow[i]!;
       try {

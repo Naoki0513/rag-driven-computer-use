@@ -5,10 +5,19 @@ import { runSingleQuery } from './runner.js';
 
 async function main() {
   const argv = yargs(hideBin(process.argv))
-    .usage('$0 <query>')
+    .usage('$0 [options] <query>')
+    .option('headful', {
+      type: 'boolean',
+      describe: 'ヘッドフルモードでブラウザを起動（Playwright）',
+    })
     .positional('query', { type: 'string', describe: '自然言語の質問/命令', demandOption: true })
     .help(false)
-    .parseSync();
+    .parseSync() as any;
+
+  // CLIフラグを環境変数に反映（.envよりCLIを優先）
+  if (typeof argv.headful === 'boolean') {
+    process.env.HEADFUL = argv.headful ? 'true' : 'false';
+  }
 
   const query = String(argv._[0] ?? argv.query ?? '').trim();
   if (!query) {

@@ -1,3 +1,5 @@
+let _systemPromptShown = false;
+
 export function createSystemPrompt(databaseSchema: string = ""): string {
   return `
 あなたはNeo4jグラフデータベースの専門家で、ウェブ操作エージェントです。
@@ -38,6 +40,20 @@ ${databaseSchema}
 
 回答は必ず日本語で。
 `;
+}
+
+export function createSystemPromptWithSchema(databaseSchema: string = ""): string {
+  const systemPrompt = createSystemPrompt(databaseSchema);
+  if (!_systemPromptShown) {
+    // 初回のみシステムプロンプトを出力
+    console.log("\n[システムプロンプト（初回のみ表示）]");
+    console.log("=".repeat(80));
+    console.log(systemPrompt);
+    console.log("=".repeat(80));
+    console.log();
+    _systemPromptShown = true;
+  }
+  return systemPrompt;
 }
 
 
