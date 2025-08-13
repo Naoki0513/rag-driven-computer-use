@@ -4,7 +4,7 @@ import { createDriver, initDatabase, saveNode, createRelation, closeDriver } fro
 import type { NodeState, QueueItem, Interaction } from '../utilities/types.js';
 import { interactionsFromSnapshot, processInteraction } from './interactions.js';
 import { gatherWithBatches } from '../utilities/async.js';
-import { normalizeUrl, buildUrl } from '../utilities/url.js';
+import { normalizeUrl } from '../utilities/url.js';
 
 export class WebCrawler {
   private config: any;
@@ -45,13 +45,13 @@ export class WebCrawler {
     let visitedCount = 0;
     try {
       await page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
-      const preLoginNode = await this.captureAndStore(page);
+      const preLoginNode = await this.captureAndStore(page, 1);
       this.visitedHashes.add(preLoginNode.snapshotHash);
       visitedCount += 1;
 
       await this.login(page);
 
-      const postLoginNode = await this.captureAndStore(page);
+      const postLoginNode = await this.captureAndStore(page, 2);
       if (this.driver) {
         await createRelation(this.driver, preLoginNode, postLoginNode, { actionType: 'submit', ref: null, href: null, role: null, name: null });
       }
@@ -84,7 +84,7 @@ export class WebCrawler {
           break;
         } else {
           try {
-            const currentUrl = buildUrl(current.node.site, current.node.route);
+            const currentUrl = current.node.url;
             await page.goto(currentUrl, { waitUntil: 'networkidle' });
             await page.waitForTimeout(5000);
           } catch (e) {
@@ -111,6 +111,8 @@ export class WebCrawler {
           if (newNode) {
             const hash = newNode.snapshotHash;
             if (!this.visitedHashes.has(hash)) {
+              // 新しいノードの深度を設定し、保存前に反映
+              newNode.depth = current.node.depth + 1;
               await this.storeNodeAndEdge(current.node, newNode, interaction);
               this.visitedHashes.add(hash);
               this.queue.push({ node: newNode, depth: current.depth + 1 });
@@ -132,9 +134,9 @@ export class WebCrawler {
     }
   }
 
-  private async captureAndStore(page: Page): Promise<NodeState> {
+  private async captureAndStore(page: Page, depth: number): Promise<NodeState> {
     const { captureNode } = await import('../utilities/snapshots.js');
-    const node = await captureNode(page);
+    const node = await captureNode(page, { depth });
     try {
       const preview = node.snapshotForAI.slice(0, 200).replace(/\s+/g, ' ');
       console.info(`[snapshotForAI] ${preview}${node.snapshotForAI.length > 200 ? '…' : ''}`);

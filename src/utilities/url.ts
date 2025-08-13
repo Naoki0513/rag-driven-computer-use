@@ -31,21 +31,6 @@ export function normalizeUrl(inputUrl: string): string {
   }
 }
 
-export function parseSiteAndRoute(inputUrl: string): { site: string; route: string } {
-  try {
-    const url = new URL(normalizeUrl(inputUrl));
-    const origin = `${url.protocol}//${url.host}`;
-    const route = `${url.pathname}${url.search}` || '/';
-    return { site: origin, route: route || '/' };
-  } catch {
-    return { site: '', route: inputUrl };
-  }
-}
-
-export function buildUrl(site: string, route: string): string {
-  const cleanSite = site.replace(/\/$/, '');
-  const cleanRoute = route.startsWith('/') ? route : `/${route}`;
-  return normalizeUrl(`${cleanSite}${cleanRoute}`);
-}
+// route は廃止。必要な場合は呼び出し側で URL を直接保持・連結してください。
 
 

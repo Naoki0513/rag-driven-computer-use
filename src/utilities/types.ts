@@ -1,9 +1,10 @@
 export interface NodeState {
   site: string;
-  route: string;
+  url: string;
   snapshotForAI: string;
   snapshotHash: string;
   timestamp: string;
+  depth: number;
 }
 
 export type ActionType = 'click' | 'input' | 'select' | 'navigate' | 'submit';

@@ -22,7 +22,7 @@ export async function initDatabase(driver: Driver): Promise<void> {
     }
     await session.run('MATCH (n) DETACH DELETE n');
     await session.run('CREATE CONSTRAINT node_state_hash IF NOT EXISTS FOR (n:Page) REQUIRE n.snapshot_hash IS UNIQUE');
-    await session.run('CREATE INDEX node_site_route IF NOT EXISTS FOR (n:Page) ON (n.site, n.route)');
+    await session.run('CREATE INDEX node_site_url IF NOT EXISTS FOR (n:Page) ON (n.site, n.url)');
   } finally {
     await session.close();
   }
@@ -34,15 +34,17 @@ export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
     await session.run(
       `MERGE (n:Page {snapshot_hash: $snapshot_hash})
        SET n.site = $site,
-           n.route = $route,
+           n.url = $url,
            n.snapshot_for_ai = $snapshot_for_ai,
-           n.timestamp = $timestamp`,
+           n.timestamp = $timestamp,
+           n.depth = $depth`,
       {
         snapshot_hash: node.snapshotHash,
         site: node.site,
-        route: node.route,
+        url: node.url,
         snapshot_for_ai: node.snapshotForAI,
         timestamp: node.timestamp,
+        depth: node.depth,
       },
     );
   } finally {

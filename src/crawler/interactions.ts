@@ -1,5 +1,5 @@
 import type { Interaction, NodeState } from '../utilities/types.js';
-import { isInternalLink, normalizeUrl, buildUrl } from '../utilities/url.js';
+import { isInternalLink, normalizeUrl } from '../utilities/url.js';
 import type { BrowserContext, Page } from 'playwright';
 
 function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null {
@@ -22,7 +22,8 @@ async function waitForAppReady(page: Page): Promise<void> {
 
 async function capture(page: Page): Promise<NodeState> {
   const { captureNode } = await import('../utilities/snapshots.js');
-  return captureNode(page);
+  // depth は呼び出し側で上書きするので、一時的に fromNode.depth + 1 へ置換する箇所で再設定
+  return captureNode(page, { depth: 0 });
 }
 
 export async function interactionsFromSnapshot(snapshotText: string): Promise<Interaction[]> {
@@ -89,7 +90,7 @@ export async function processInteraction(
     if (!config.visitedHashes) config.visitedHashes = new Set<string>();
 
     const debugId = `${interaction.role ?? 'unknown-role'}::${interaction.name ?? 'unnamed'}::${interaction.ref ?? interaction.refId ?? 'no-ref'}`;
-    const fromUrl = buildUrl(fromNode.site, fromNode.route);
+    const fromUrl = fromNode.url;
     console.info(`[processInteraction] start for ${debugId} at ${fromUrl}`);
     await newPage.goto(fromUrl, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(newPage);
@@ -152,7 +153,7 @@ export async function processInteraction(
     await locator.first().click();
     await waitForAppReady(newPage).catch(() => {});
     const newNode = await capture(newPage);
-    console.info(`[processInteraction] getByRole fallback produced state -> ${buildUrl(newNode.site, newNode.route)}`);
+    console.info(`[processInteraction] getByRole fallback produced state -> ${newNode.url}`);
     return newNode;
   } catch (e) {
     console.warn('[processInteraction] error:', e);
