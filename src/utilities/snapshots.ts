@@ -6,7 +6,7 @@ import { computeSha256Hex } from './text.js';
 
 export async function captureNode(page: Page, options: { depth: number }): Promise<NodeState> {
   await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(3000);
+  try { await page.waitForTimeout(3000); } catch {}
 
   const rawUrl = page.url();
   const normalizedUrl = normalizeUrl(rawUrl);

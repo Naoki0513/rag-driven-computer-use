@@ -118,6 +118,15 @@ export class WebCrawler {
               this.queue.push({ node: newNode, depth: current.depth + 1 });
               visitedCount += 1;
               this.noDiscoveryStreak = 0;
+            } else if (this.driver) {
+              // 既知ノードでもリレーションは作成（自己ループは内部で抑止）
+              await createRelation(this.driver, current.node, newNode, {
+                actionType: interaction.actionType,
+                ref: interaction.ref ?? interaction.refId ?? null,
+                href: interaction.href ?? null,
+                role: interaction.role ?? null,
+                name: interaction.name ?? null,
+              });
             }
           }
           return newNode;

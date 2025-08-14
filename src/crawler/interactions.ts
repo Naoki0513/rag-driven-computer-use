@@ -113,10 +113,8 @@ export async function processInteraction(
             interaction.href = targetUrl;
             await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
             const newNode = await capture(newPage);
-            if (!config.visitedHashes.has(newNode.snapshotHash)) {
-              return newNode;
-            }
-            return null;
+            // 既知スナップショットでも上位でリレーション作成できるように常に返す
+            return newNode;
           }
         }
       } catch {}
@@ -156,7 +154,8 @@ export async function processInteraction(
     console.info(`[processInteraction] getByRole fallback produced state -> ${newNode.url}`);
     return newNode;
   } catch (e) {
-    console.warn('[processInteraction] error:', e);
+    const msg = String((e as Error)?.message ?? e);
+    console.warn('[processInteraction] error:', msg);
     return null;
   } finally {
     try { await newPage?.close(); } catch {}

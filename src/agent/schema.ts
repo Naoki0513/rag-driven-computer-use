@@ -68,6 +68,37 @@ ${nodeCounts.join('\n')}
 
 - リレーションシップタイプ: ${relList.length ? relList.join(', ') : 'なし'}
 ${relCounts.join('\n')}
+ 
+ - エントリページ(depth=1)概要:
+ ${await (async () => {
+   try {
+     const depth1Counts = await queryAll<{ site: string; pages: number }>(
+       driver!,
+       'MATCH (p:Page { depth: 1 }) RETURN p.site AS site, count(p) AS pages ORDER BY pages DESC LIMIT 20'
+     );
+     const siteLines = depth1Counts.map((r) => `  - ${r.site}: depth=1 ページ数 ${r.pages}`);
+ 
+     const relFromDepth1 = await queryAll<{ rel: string; c: number }>(
+       driver!,
+       'MATCH (:Page { depth: 1 })-[r]->() RETURN type(r) AS rel, count(r) AS c ORDER BY c DESC LIMIT 10'
+     );
+     const relLines = relFromDepth1.map((r) => `  - ${r.rel}: ${r.c} 件（depth=1 からの遷移）`);
+ 
+     const targetDepthDist = await queryAll<{ depth: number; c: number }>(
+       driver!,
+       'MATCH (:Page { depth: 1 })-[r]->(t:Page) RETURN t.depth AS depth, count(r) AS c ORDER BY c DESC'
+     );
+     const depthLines = targetDepthDist.map((r) => `  - t.depth=${r.depth}: ${r.c} 件`);
+ 
+     return [
+       siteLines.length ? siteLines.join('\n') : '  - 該当なし',
+       '\n  リレーション（depth=1 起点）:\n' + (relLines.length ? relLines.join('\n') : '    - 該当なし'),
+       '\n  遷移先の深さ分布:\n' + (depthLines.length ? depthLines.join('\n') : '    - 該当なし'),
+     ].join('\n');
+   } catch (e) {
+     return `  - 取得失敗: ${String((e as any)?.message ?? e)}`;
+   }
+ })()}
 `;
     return info;
   } catch (e: any) {
