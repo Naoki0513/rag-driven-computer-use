@@ -12,11 +12,11 @@ async function queryAll<T = any>(driver: Driver, cypher: string): Promise<T[]> {
 }
 
 export async function getDatabaseSchemaString(): Promise<string> {
-  const uri = process.env.NEO4J_URI;
-  const user = process.env.NEO4J_USER;
-  const password = process.env.NEO4J_PASSWORD;
+  const uri = process.env.AGENT_NEO4J_URI;
+  const user = process.env.AGENT_NEO4J_USER;
+  const password = process.env.AGENT_NEO4J_PASSWORD;
   if (!uri || !user || !password) {
-    return 'スキーマ取得エラー: NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD が未設定です';
+    return 'スキーマ取得エラー: AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD が未設定です';
   }
   let driver: Driver | null = null;
   try {

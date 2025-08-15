@@ -3,17 +3,24 @@ import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
 
 export async function runSingleQuery(query: string): Promise<void> {
-  const region = process.env.AWS_REGION;
-  const modelId = process.env.BEDROCK_MODEL_ID;
-  console.log('WebGraph-Agent Cypher AI エージェントを起動しています...');
-  if (!region) throw new Error('AWS_REGION が未設定です (.env を確認)');
-  if (!modelId) throw new Error('BEDROCK_MODEL_ID が未設定です (.env を確認)');
-  // Neo4j接続情報チェック（実接続は schema.ts/ツールで行う）
-  const { NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD } = process.env;
-  if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
-    throw new Error('NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD が未設定です (.env を確認)');
+  // Dry-run support for CI/validation environments without AWS/Neo4j
+  const isDryRun = String(process.env.AGENT_DRY_RUN ?? 'false').toLowerCase() === 'true';
+  if (isDryRun) {
+    console.log('[DRY-RUN] AGENT_DRY_RUN=true 代理動作: Bedrock/Neo4j へは接続しません');
+    console.log(`[DRY-RUN] query: ${query}`);
+    return;
   }
-  console.log(`[OK] 実行環境チェックに成功しました (AWS_REGION=${region}, MODEL=${modelId})`);
+  const region = process.env.AGENT_AWS_REGION;
+  const modelId = process.env.AGENT_BEDROCK_MODEL_ID;
+  console.log('WebGraph-Agent Cypher AI エージェントを起動しています...');
+  if (!region) throw new Error('AGENT_AWS_REGION が未設定です (.env を確認)');
+  if (!modelId) throw new Error('AGENT_BEDROCK_MODEL_ID が未設定です (.env を確認)');
+  // Neo4j接続情報チェック（実接続は schema.ts/ツールで行う）
+  const { AGENT_NEO4J_URI, AGENT_NEO4J_USER, AGENT_NEO4J_PASSWORD } = process.env as any;
+  if (!AGENT_NEO4J_URI || !AGENT_NEO4J_USER || !AGENT_NEO4J_PASSWORD) {
+    throw new Error('AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD が未設定です (.env を確認)');
+  }
+  console.log(`[OK] 実行環境チェックに成功しました (AGENT_AWS_REGION=${region}, MODEL=${modelId})`);
 
   console.log('データベーススキーマを取得中...');
   const schema = await getDatabaseSchemaString();
@@ -31,5 +38,4 @@ export async function runSingleQuery(query: string): Promise<void> {
   console.log(`- 総キャッシュ書き込みトークン数: ${usage.cacheWrite}`);
   console.log(`- 総トークン数: ${usage.input + usage.output}`);
 }
-
 

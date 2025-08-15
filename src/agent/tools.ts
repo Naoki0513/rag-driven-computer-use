@@ -3,10 +3,10 @@ import type { Driver } from 'neo4j-driver';
 import { createDriver, closeDriver } from '../utilities/neo4j.js';
 
 export async function runCypher(query: string): Promise<string> {
-  const uri = process.env.NEO4J_URI;
-  const user = process.env.NEO4J_USER;
-  const password = process.env.NEO4J_PASSWORD;
-  if (!uri || !user || !password) return 'エラー: Neo4j接続情報(NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD)が未設定です';
+  const uri = process.env.AGENT_NEO4J_URI;
+  const user = process.env.AGENT_NEO4J_USER;
+  const password = process.env.AGENT_NEO4J_PASSWORD;
+  if (!uri || !user || !password) return 'エラー: Neo4j接続情報(AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD)が未設定です';
 
   let driver: Driver | null = null;
   try {
@@ -37,7 +37,7 @@ type WorkflowStep =
   | { action: 'press'; role: string; name: string; key: string };
 
 export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string> {
-  const headful = String(process.env.HEADFUL ?? 'false').toLowerCase() === 'true';
+  const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
   const browser = await chromium.launch({ headless: !headful });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -45,9 +45,9 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
   const snapshots: string[] = [];
   try {
     // Optional pre-login flow to align with Python implementation
-    const domain = process.env.BROWSER_DOMAIN;
-    const username = process.env.BROWSER_USERNAME;
-    const password = process.env.BROWSER_PASSWORD;
+    const domain = process.env.AGENT_BROWSER_DOMAIN;
+    const username = process.env.AGENT_BROWSER_USERNAME;
+    const password = process.env.AGENT_BROWSER_PASSWORD;
     if (domain && username && password) {
       try {
         console.log(`[Login] ${domain} にアクセスしてログインを試行します`);
