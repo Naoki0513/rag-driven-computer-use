@@ -90,12 +90,20 @@ export async function converseLoop(
 
   while (true) {
     const currentMessages = addCachePoints(messages, isClaude, isNova);
+    const additionalModelRequestFields: Record<string, any> = {};
+    if (isClaude) {
+      // Anthropic Beta: Context 1M (configurable via env, default provided)
+      const betaTag = process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07';
+      additionalModelRequestFields['anthropic_beta'] = [betaTag];
+    }
     const cmd = new ConverseCommand({
       modelId,
       system,
       toolConfig,
       messages: currentMessages as any,
       inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+      // Add provider-specific request headers/fields
+      additionalModelRequestFields,
     });
 
     const maxRetries = 3;

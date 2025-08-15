@@ -45,16 +45,16 @@ npm run playwright:install   # 初回のみ（ブラウザをインストール�
 ### 3. 設定（.env）
 `.env` を作成し、`.env.example` を参考に値を設定してください。
 
-優先順位: CLI > .env > デフォルト。
+優先順位: CLI > .env > デフォルト。設定は .env に統一しています（Python の設定ファイルは使用しません）。
 
 ## 🚀 使い方
 
-### 1. TypeScript クローラー（本移行範囲）
+### 1. TypeScript クローラー
 
 ```bash
 npm run typecheck
 npm run build
-npm start -- --url http://the-agent-company.com:3000/ --headful
+npm run start:crawler
 ```
 
 起動時ログに、初期ページのキャプチャ、ログイン判定、その後のBFSクロール進捗が表示されます。Neo4j未接続時は安全にスキップし、クローリングのみ実行します（結果はログ出力）。
@@ -84,24 +84,19 @@ npm start -- --url http://the-agent-company.com:3000/ --headful
 
 ### 2. 補助ツール
 
-#### CLI オプション
+#### 実行方法（エージェント）
 ```bash
-node dist/main.js \
-  --url <URL> \
-  --user <USER> \
-  --password <PASSWORD> \
-  --depth 20 \
-  --limit 10000 \
-  --parallel 8 \
-  --headful \
-  --no-clear \
-  --exhaustive
+npm run build
+npm run start:agent -- "ノード数を教えて"
+# または環境変数を利用
+setx AGENT_QUERY "状態の種類ごとに集計して"
+npm run start:agent
 ```
 
 #### Neo4j接続診断
 ```bash
-# データベース接続をテスト
-python utilities/test_neo4j_connection.py
+# cypher-shell を使って疎通確認
+./cypher-shell.bat "RETURN 1 AS ok"
 ```
 
 ## 🌟 プロジェクトの特徴
@@ -181,28 +176,29 @@ LIMIT 20
 
 ## ⚙️ 設定
 
-### 設定ファイル（agent/config.py）
+### .env のキー一覧（抜粋）
 
-```python
-# Neo4j設定
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "testpassword"
+```env
+# エージェント（Bedrock + Neo4j）
+AGENT_AWS_REGION=us-west-2
+AGENT_BEDROCK_MODEL_ID=us.anthropic.claude-3-7-sonnet-20250219-v1:0
+AGENT_NEO4J_URI=bolt://localhost:7687
+AGENT_NEO4J_USER=neo4j
+AGENT_NEO4J_PASSWORD=testpassword
 
-# AWS Bedrock設定
-AWS_REGION = "us-west-2"
-BEDROCK_MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-```
-
-### クローラー設定（utilities/crawler.py）
-
-```python
-# デフォルト値
-MAX_STATES = 10000                  # 最大状態数
-MAX_DEPTH = 20                      # 最大探索深度
-PARALLEL_TASKS = 8                  # 並列タスク数
-MAX_HTML_SIZE = 100 * 1024          # 100KB
-MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
+# クローラ
+CRAWLER_NEO4J_URI=bolt://localhost:7687
+CRAWLER_NEO4J_USER=neo4j
+CRAWLER_NEO4J_PASSWORD=testpassword
+CRAWLER_TARGET_URL=http://the-agent-company.com:3000/
+CRAWLER_LOGIN_USER=theagentcompany
+CRAWLER_LOGIN_PASS=theagentcompany
+CRAWLER_MAX_STATES=10000
+CRAWLER_MAX_DEPTH=20
+CRAWLER_PARALLEL_TASKS=8
+CRAWLER_HEADFUL=false
+CRAWLER_CLEAR_DB=true
+CRAWLER_EXHAUSTIVE=false
 ```
 
 ## ⚠️ 注意事項
@@ -229,7 +225,7 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 ### Neo4j接続エラー
 - Neo4jが起動していることを確認
 - 接続情報（URI、ユーザー名、パスワード）を確認
-- Node版では `node utilities/test_neo4j_connection.js`（将来提供予定）
+  - `./cypher-shell.bat "RETURN 1 AS ok"` で疎通確認
 
 ### クロール関連
 - ネットワーク接続を確認
@@ -268,37 +264,6 @@ MAX_ARIA_CONTEXT_SIZE = 2 * 1024    # 2KB
 
 問題が発生した場合は、GitHubのissueを作成してください。
 
-## 移行ノート（Python → TypeScript）
+## 注意
 
-- 設定は `.env` へ統一（CLIが最優先）
-- Playwright の `Locator.ariaSnapshot()` はバージョン相違により未対応の可能性があるため、フォールバックとして `page.accessibility.snapshot()` のYAML化を採用
-- Neo4j未接続時はスキップ実行可能（ログに警告を出力）
-- 主要クラス/関数の対応: `WebCrawler`/`captureNode`/`interactions_from_snapshot`/`save_node` 等をTSへ移植
-
-crawler.pyの実行が途中で止まる問題の原因と修正:
-
-### 問題の原因
-- ページ遷移後、要素が完全に利用可能になる前にクリックしようとするため、インタラクションが失敗する。
-- ログイン処理でのタイムアウトや要素検出のタイミングの問題。
-
-### 修正内容
-1. **_find_interactionsメソッド**:
-   - 要素の可視性(is_visible())と有効性(is_enabled())を確認して、利用可能な要素のみを対象とする。
-
-2. **_process_interactionメソッド**:
-   - wait_for_selectorを使って要素がvisibleになるまで待機(タイムアウト10秒)。
-   - クリック前にis_enabled()を確認。
-
-3. **_loginメソッド**:
-   - gotoのwait_untilを'load'に設定し、タイムアウトを60秒に。
-   - networkidleの待機をtry-exceptでハンドルし、タイムアウト時は継続。
-   - 追加のwait_for_timeout(5000)を挿入。
-
-4. **runメソッド**:
-   - 初期状態キャプチャ前にwait_for_timeout(5000)を追加。
-   - ページ移動後にwait_for_timeout(5000)を追加。
-
-### 結果
-- これらの修正により、ノード26個、エッジ162個のグラフを正常に生成。
-
-詳細はutilities/crawler.pyを参照。
+- 設定は `.env` に統一しています。Python の設定ファイルやスクリプトは使用していません。

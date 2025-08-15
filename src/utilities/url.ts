@@ -31,6 +31,4 @@ export function normalizeUrl(inputUrl: string): string {
   }
 }
 
-// route は廃止。必要な場合は呼び出し側で URL を直接保持・連結してください。
-
 
