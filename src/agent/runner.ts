@@ -1,6 +1,7 @@
 import { converseLoop } from './bedrockClient.js';
 import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
+import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools.js';
 
 export async function runSingleQuery(query: string): Promise<void> {
   const region = process.env.AGENT_AWS_REGION;
@@ -15,20 +16,27 @@ export async function runSingleQuery(query: string): Promise<void> {
   }
   console.log(`[OK] 実行環境チェックに成功しました (AGENT_AWS_REGION=${region}, MODEL=${modelId})`);
 
-  console.log('データベーススキーマを取得中...');
-  const schema = await getDatabaseSchemaString();
-  console.log('[OK] データベーススキーマを取得しました');
+  // まず最初にブラウザを起動（以降の実行で共有・再利用）
+  await ensureSharedBrowserStarted();
+  try {
+    console.log('データベーススキーマを取得中...');
+    const schema = await getDatabaseSchemaString();
+    console.log('[OK] データベーススキーマを取得しました');
 
-  const systemPrompt = createSystemPromptWithSchema(schema);
-  console.log(`\n実行中のクエリ: ${query}`);
-  console.log('\nエージェント:');
-  const { fullText, usage } = await converseLoop(query, systemPrompt, modelId!, region!);
-  console.log(fullText);
-  console.log('\nトークン使用情報:');
-  console.log(`- 総入力トークン数: ${usage.input}`);
-  console.log(`- 総出力トークン数: ${usage.output}`);
-  console.log(`- 総キャッシュ読み取りトークン数: ${usage.cacheRead}`);
-  console.log(`- 総キャッシュ書き込みトークン数: ${usage.cacheWrite}`);
-  console.log(`- 総トークン数: ${usage.input + usage.output}`);
+    const systemPrompt = createSystemPromptWithSchema(schema);
+    console.log(`\n実行中のクエリ: ${query}`);
+    console.log('\nエージェント:');
+    const { fullText, usage } = await converseLoop(query, systemPrompt, modelId!, region!);
+    console.log(fullText);
+    console.log('\nトークン使用情報:');
+    console.log(`- 総入力トークン数: ${usage.input}`);
+    console.log(`- 総出力トークン数: ${usage.output}`);
+    console.log(`- 総キャッシュ読み取りトークン数: ${usage.cacheRead}`);
+    console.log(`- 総キャッシュ書き込みトークン数: ${usage.cacheWrite}`);
+    console.log(`- 総トークン数: ${usage.input + usage.output}`);
+  } finally {
+    // 完了時に5秒（または環境変数の指定 ms）待ってからクローズ
+    await closeSharedBrowserWithDelay();
+  }
 }
 

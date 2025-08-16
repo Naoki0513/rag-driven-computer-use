@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Driver } from 'neo4j-driver';
 import { createDriver, closeDriver } from '../utilities/neo4j.js';
 import { getSnapshotForAI } from '../utilities/snapshots.js';
@@ -32,6 +32,67 @@ export async function runCypher(query: string): Promise<string> {
   }
 }
 
+// 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
+let sharedBrowser: Browser | null = null;
+let sharedContext: BrowserContext | null = null;
+let sharedPage: Page | null = null;
+
+async function performOptionalPreLogin(page: Page): Promise<void> {
+  const domain = process.env.AGENT_BROWSER_DOMAIN;
+  const username = process.env.AGENT_BROWSER_USERNAME;
+  const password = process.env.AGENT_BROWSER_PASSWORD;
+  if (!(domain && username && password)) return;
+  try {
+    console.log(`[Login] ${domain} にアクセスしてログインを試行します`);
+    await page.goto(domain);
+    await page.waitForLoadState('networkidle').catch(() => {});
+    const loginInput = await page.$('input[name="emailOrUsername"]');
+    if (loginInput) await loginInput.fill(username);
+    const pwInput = await page.$('input[type="password"]');
+    if (pwInput) await pwInput.fill(password);
+    const submit = await page.$('button.login');
+    if (submit) await submit.click();
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(5000).catch(() => {});
+    console.log('Pre-login succeeded');
+  } catch (e: any) {
+    console.log(`Pre-login failed: ${String(e?.message ?? e)}`);
+  }
+}
+
+export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
+  if (sharedBrowser && sharedContext && sharedPage) {
+    return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
+  }
+  const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
+  sharedBrowser = await chromium.launch({ headless: !headful });
+  sharedContext = await sharedBrowser.newContext();
+  sharedPage = await sharedContext.newPage();
+  await performOptionalPreLogin(sharedPage);
+  console.log('[OK] 共有 Playwright ブラウザを起動しました');
+  return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
+}
+
+export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<void> {
+  const ms = Number.isFinite(Number(process.env.AGENT_BROWSER_CLOSE_DELAY_MS))
+    ? Number(process.env.AGENT_BROWSER_CLOSE_DELAY_MS)
+    : (typeof delayMs === 'number' ? delayMs : 5000);
+  if (sharedBrowser) {
+    try {
+      console.log(`ブラウザを ${ms}ms 後にクローズします...`);
+      await new Promise((r) => setTimeout(r, ms));
+      await sharedBrowser.close();
+      console.log('ブラウザをクローズしました');
+    } catch (e: any) {
+      console.log(`ブラウザクローズ時エラー: ${String(e?.message ?? e)}`);
+    } finally {
+      sharedBrowser = null;
+      sharedContext = null;
+      sharedPage = null;
+    }
+  }
+}
+
 type WorkflowStep =
   | { action: 'goto'; url: string }
   | { action: 'click'; ref: string }
@@ -39,36 +100,10 @@ type WorkflowStep =
   | { action: 'press'; ref: string; key: string };
 
 export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string> {
-  const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
-  const browser = await chromium.launch({ headless: !headful });
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  const { page } = await ensureSharedBrowserStarted();
   const results: string[] = [];
   const snapshots: string[] = [];
   try {
-    // Optional pre-login flow to align with Python implementation
-    const domain = process.env.AGENT_BROWSER_DOMAIN;
-    const username = process.env.AGENT_BROWSER_USERNAME;
-    const password = process.env.AGENT_BROWSER_PASSWORD;
-    if (domain && username && password) {
-      try {
-        console.log(`[Login] ${domain} にアクセスしてログインを試行します`);
-        await page.goto(domain);
-        await page.waitForLoadState('networkidle').catch(() => {});
-        const loginInput = await page.$('input[name="emailOrUsername"]');
-        if (loginInput) await loginInput.fill(username);
-        const pwInput = await page.$('input[type="password"]');
-        if (pwInput) await pwInput.fill(password);
-        const submit = await page.$('button.login');
-        if (submit) await submit.click();
-        await page.waitForLoadState('networkidle').catch(() => {});
-        await page.waitForTimeout(5000).catch(() => {});
-        results.push('Pre-login succeeded');
-      } catch (e: any) {
-        results.push(`Pre-login failed: ${String(e?.message ?? e)}`);
-      }
-    }
-
     // 提供: 現ページのARIAスナップショットに [ref=eXX] を付与する関数を注入
     async function installRefSnapshotProvider() {
       const makeSnapshot = async (): Promise<string> => {
@@ -147,7 +182,7 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
     snapshots.push(`Final ARIA Snapshot: ${JSON.stringify(finalSnap)}`);
     if (finalTextSnap) snapshots.push(`Final Text Snapshot with refs:\n${finalTextSnap}`);
   } finally {
-    await browser.close();
+    // 共有ブラウザはここでは閉じない（上位で遅延クローズ）
   }
   return results.join('\n') + '\n\nSnapshots:\n' + snapshots.join('\n') + '\nWorkflow executed.';
 }
