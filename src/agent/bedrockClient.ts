@@ -62,7 +62,6 @@ function buildToolConfig(): ToolConfiguration {
     toolChoice: { auto: {} },
   } as ToolConfiguration;
 }
-
 export async function converseLoop(
   query: string,
   systemPrompt: string,
@@ -91,8 +90,9 @@ export async function converseLoop(
   while (true) {
     const currentMessages = addCachePoints(messages, isClaude, isNova);
     const additionalModelRequestFields: Record<string, any> = {};
-    if (isClaude) {
-      // Anthropic Beta: Context 1M (configurable via env, default provided)
+    const enableAnthropicBeta = modelId === 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+    if (enableAnthropicBeta) {
+      // Anthropic Beta: Context 1M (configurable via env, default provided). Only for the specific model.
       const betaTag = process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07';
       additionalModelRequestFields['anthropic_beta'] = [betaTag];
     }
