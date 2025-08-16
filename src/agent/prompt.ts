@@ -35,7 +35,7 @@ ${databaseSchema}
         例: MATCH (p:Page) WHERE p.snapshot_for_ai CONTAINS 'キーワード' RETURN p.url, p.depth LIMIT 20
       - ルート候補の抽出（CLICK_TO パス）
         例: MATCH (s:Page { depth: 1 })-[:CLICK_TO*1..4]->(t:Page) WHERE t.url CONTAINS '目標' RETURN s.url, t.url LIMIT 20
-   2) ルート設計: CLICK_TO リレーションの role/name/href を用いて、Playwright の getByRole で特定可能なクリックシーケンスを構成
+   2) ルート設計: CLICK_TO リレーションの情報を用いて、クリック候補の ref（eXX）に紐づく操作シーケンスを構成
    3) 実行: 最初に depth=1 のURLへ goto、以降は click/input/press を用いて段階遷移
 
 4. ユーザーの質問に基づいて適切なCypherクエリを生成してください
@@ -50,11 +50,12 @@ ${databaseSchema}
    - depth=1 URL を最初の goto に使用し、それ以外のページへは CLICK_TO に対応する click で遷移
    - 候補ページの確認は Page.snapshot_for_ai を分析し、目標要素の存在を確認
    - 不明時対応: snapshot_for_ai を全文検索してキーワードを含むノードを探索
-   - 操作計画: snapshot_for_ai とリレーションの role/name/href を基に Playwright の getByRole(role, { name, exact: true }) で識別できる操作計画を作成
-   - JSONワークフロー: action, role, name, text, url, key などを指定
+   - 操作計画: 画面の ARIA スナップショット（snapshot_for_ai）に付与される [ref=eXX] を優先して使用してください
+     - 実行時に ref から role/name を解決します。表記揺れに強く、安定します
+   - JSONワークフロー: action, url（goto時）, ref（click/input/press時）, text/key を指定（role/name は使用しない）
    - 実行: execute_workflow ツールで実行
-   - 例: [ { "action": "goto", "url": "https://example.com" }, { "action": "click", "role": "link", "name": "general" }, { "action": "input", "role": "textbox", "name": "メッセージ", "text": "yes" }, { "action": "press", "role": "textbox", "name": "メッセージ", "key": "Enter" } ]
-   - 各ステップで role と name を必ず指定し、CSS セレクタは使用しない
+   - 例: [ { "action": "goto", "url": "https://example.com" }, { "action": "click", "ref": "e64" }, { "action": "input", "ref": "e276", "text": "yes" }, { "action": "press", "ref": "e276", "key": "Enter" } ]
+   - CSS セレクタは使用しない
 
 回答は必ず日本語で。
 `;

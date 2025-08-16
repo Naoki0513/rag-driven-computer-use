@@ -3,13 +3,6 @@ import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
 
 export async function runSingleQuery(query: string): Promise<void> {
-  // Dry-run support for CI/validation environments without AWS/Neo4j
-  const isDryRun = String(process.env.AGENT_DRY_RUN ?? 'false').toLowerCase() === 'true';
-  if (isDryRun) {
-    console.log('[DRY-RUN] AGENT_DRY_RUN=true 代理動作: Bedrock/Neo4j へは接続しません');
-    console.log(`[DRY-RUN] query: ${query}`);
-    return;
-  }
   const region = process.env.AGENT_AWS_REGION;
   const modelId = process.env.AGENT_BEDROCK_MODEL_ID;
   console.log('WebGraph-Agent Cypher AI エージェントを起動しています...');

@@ -33,7 +33,7 @@ function buildToolConfig(): ToolConfiguration {
         toolSpec: {
           name: 'execute_workflow',
           description:
-            'JSON形式のワークフローを入力として受け取り、Playwright APIを使ってブラウザを操作し、各ステップを直列に実行。目標達成したら終了。',
+            'JSON形式のワークフローを入力として受け取り、Playwright APIを使ってブラウザを操作し各ステップを直列に実行。クリック/入力/押下の対象要素は ref(eXX) を優先して指定し、実行時にARIAスナップショットから role/name に解決して実行します（後方互換として role/name 指定も可）。',
           inputSchema: {
             json: {
               type: 'object',
@@ -45,8 +45,7 @@ function buildToolConfig(): ToolConfiguration {
                     properties: {
                       action: { type: 'string' },
                       url: { type: 'string' },
-                      name: { type: 'string' },
-                      role: { type: 'string' },
+                      ref: { type: 'string' },
                       text: { type: 'string' },
                       key: { type: 'string' },
                     },

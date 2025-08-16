@@ -1,6 +1,8 @@
 import { chromium } from 'playwright';
 import type { Driver } from 'neo4j-driver';
 import { createDriver, closeDriver } from '../utilities/neo4j.js';
+import { getSnapshotForAI } from '../utilities/snapshots.js';
+import { findRoleAndNameByRef } from '../utilities/text.js';
 
 export async function runCypher(query: string): Promise<string> {
   const uri = process.env.AGENT_NEO4J_URI;
@@ -32,9 +34,9 @@ export async function runCypher(query: string): Promise<string> {
 
 type WorkflowStep =
   | { action: 'goto'; url: string }
-  | { action: 'click'; role: string; name: string }
-  | { action: 'input'; role: string; name: string; text: string }
-  | { action: 'press'; role: string; name: string; key: string };
+  | { action: 'click'; ref: string }
+  | { action: 'input'; ref: string; text: string }
+  | { action: 'press'; ref: string; key: string };
 
 export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string> {
   const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
@@ -67,6 +69,43 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
       }
     }
 
+    // 提供: 現ページのARIAスナップショットに [ref=eXX] を付与する関数を注入
+    async function installRefSnapshotProvider() {
+      const makeSnapshot = async (): Promise<string> => {
+        const tree: any = await page.accessibility.snapshot().catch(() => ({}));
+        const lines: string[] = [];
+        let counter = 1;
+        const walk = (node: any, depth: number) => {
+          if (!node || typeof node !== 'object') return;
+          const role = String(node.role ?? 'generic');
+          const name = typeof node.name === 'string' ? node.name : undefined;
+          const ref = `e${counter++}`;
+          const label = name && name.trim().length > 0 ? `${role} "${name}" [ref=${ref}]` : `${role} [ref=${ref}]`;
+          lines.push(`${'  '.repeat(depth)}- ${label}`);
+          const children: any[] = Array.isArray(node.children) ? node.children : [];
+          for (const c of children) walk(c, depth + 1);
+        };
+        walk(tree, 0);
+        return lines.join('\n');
+      };
+      (page as any)._snapshotForAI = makeSnapshot;
+    }
+
+    async function resolveLocatorByRef(ref: string) {
+      // 必ずプロバイダをセットしてから参照解決
+      await installRefSnapshotProvider();
+      const snapText = await getSnapshotForAI(page);
+      const roleName = findRoleAndNameByRef(snapText, ref);
+      if (!roleName) throw new Error(`ref=${ref} に対応する要素が見つかりません (現在のARIAスナップショット)`);
+      const { role, name } = roleName;
+      const locator = name && name.trim().length > 0
+        ? page.getByRole(role as any, { name, exact: true } as any)
+        : page.getByRole(role as any);
+      // 要素の存在確認
+      await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+      return { locator, role, name } as const;
+    }
+
     for (let i = 0; i < workflow.length; i += 1) {
       const step = workflow[i]!;
       try {
@@ -75,35 +114,38 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
           await page.waitForLoadState('networkidle').catch(() => {});
           results.push(`Navigated to ${step.url}`);
         } else if (step.action === 'click') {
-          const locator = page.getByRole(step.role as any, { name: step.name, exact: true } as any);
-          await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+          const { locator, role, name } = await resolveLocatorByRef(step.ref);
           await locator.first().click();
           await page.waitForLoadState('networkidle').catch(() => {});
-          results.push(`Clicked ${step.role}: ${step.name}`);
+          results.push(`Clicked ref=${step.ref} (${role}${name ? `: ${name}` : ''})`);
         } else if (step.action === 'input') {
-          const locator = page.getByRole(step.role as any, { name: step.name, exact: true } as any);
-          await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+          const { locator, role, name } = await resolveLocatorByRef(step.ref);
           await locator.first().fill(step.text);
-          results.push(`Input ${step.text} into ${step.role}: ${step.name}`);
+          results.push(`Input into ref=${step.ref} (${role}${name ? `: ${name}` : ''}) -> ${step.text}`);
         } else if (step.action === 'press') {
-          const locator = page.getByRole(step.role as any, { name: step.name, exact: true } as any);
-          await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+          const { locator, role, name } = await resolveLocatorByRef(step.ref);
           await locator.first().press(step.key);
-          results.push(`Pressed ${step.key} on ${step.role}: ${step.name}`);
+          results.push(`Pressed ${step.key} on ref=${step.ref} (${role}${name ? `: ${name}` : ''})`);
         } else {
           results.push(`Unknown action: ${(step as any).action}`);
         }
       } catch (e: any) {
         const snap = await page.accessibility.snapshot().catch(() => ({}));
+        const textSnap = await getSnapshotForAI(page).catch(() => '');
         results.push(`Error in step ${i + 1}: ${String(e?.message ?? e)}\nError ARIA Snapshot: ${JSON.stringify(snap)}`);
         snapshots.push(`Error ARIA Snapshot for step ${i + 1}: ${JSON.stringify(snap)}`);
+        if (textSnap) snapshots.push(`Error Text Snapshot with refs for step ${i + 1}:\n${textSnap}`);
         break;
       }
       const snap = await page.accessibility.snapshot().catch(() => ({}));
+      const textSnap = await getSnapshotForAI(page).catch(() => '');
       snapshots.push(`ARIA Snapshot after step ${i + 1}: ${JSON.stringify(snap)}`);
+      if (textSnap) snapshots.push(`Text Snapshot with refs after step ${i + 1}:\n${textSnap}`);
     }
     const finalSnap = await page.accessibility.snapshot().catch(() => ({}));
+    const finalTextSnap = await getSnapshotForAI(page).catch(() => '');
     snapshots.push(`Final ARIA Snapshot: ${JSON.stringify(finalSnap)}`);
+    if (finalTextSnap) snapshots.push(`Final Text Snapshot with refs:\n${finalTextSnap}`);
   } finally {
     await browser.close();
   }

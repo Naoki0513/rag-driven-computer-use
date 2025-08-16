@@ -24,4 +24,54 @@ export function extractRefIdFromSnapshot(snapshotText: string): string | null {
   return null;
 }
 
+export function findRoleAndNameByRef(
+  snapshotText: string,
+  refId: string,
+): { role: string; name?: string } | null {
+  try {
+    const lines = snapshotText.split(/\r?\n/);
+    const refToken = `[ref=${refId}]`;
+    let foundIndex = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i]!.includes(refToken)) {
+        foundIndex = i;
+        break;
+      }
+    }
+    if (foundIndex === -1) return null;
+
+    // Try to extract role and name from the same line
+    const line = lines[foundIndex]!;
+    const sameLineMatch = /-\s*([a-zA-Z]+)(?:\s+"([^"]+)")?[^\n]*\[ref=([\w:-]+)\]/.exec(line);
+    if (sameLineMatch) {
+      const role = sameLineMatch[1]!.toLowerCase();
+      const name = sameLineMatch[2];
+      if (role && role !== 'generic') {
+        const out: { role: string; name?: string } = { role };
+        if (name && name.trim().length > 0) out.name = name;
+        return out;
+      }
+      if (role) {
+        if (name && name.trim().length > 0) return { role, name };
+      }
+    }
+
+    // Fallback: look upward for a meaningful ancestor line with a role and optional name
+    for (let j = foundIndex - 1; j >= Math.max(0, foundIndex - 10); j -= 1) {
+      const l = lines[j]!;
+      const m = /-\s*([a-zA-Z]+)(?:\s+"([^"]+)")?/.exec(l);
+      if (m) {
+        const role = m[1]!.toLowerCase();
+        const name = m[2];
+        if (role && role !== 'generic') {
+          const out: { role: string; name?: string } = { role };
+          if (name && name.trim().length > 0) out.name = name;
+          return out;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
 
