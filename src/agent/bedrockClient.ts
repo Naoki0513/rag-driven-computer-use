@@ -6,7 +6,7 @@ import {
   type SystemContentBlock,
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
-import { runCypher, executeWorkflow, type ToolUseInput } from './tools.js';
+import { runCypher, browserGoto, browserClick, browserInput, browserPress, type ToolUseInput } from './tools.js';
 
 export type ConverseLoopResult = {
   fullText: string;
@@ -31,28 +31,52 @@ function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
-          name: 'execute_workflow',
-          description:
-            'JSON形式のワークフローを入力として受け取り、Playwright APIを使ってブラウザを操作し各ステップを直列に実行。クリック/入力/押下の対象要素は ref(eXX) を優先して指定し、実行時にARIAスナップショットから role/name に解決して実行します（後方互換として role/name 指定も可）。',
+          name: 'browser_goto',
+          description: 'ブラウザで指定URLへ遷移します（実行後のARIA/Textスナップショットを返却）',
           inputSchema: {
             json: {
               type: 'object',
-              properties: {
-                workflow: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      action: { type: 'string' },
-                      url: { type: 'string' },
-                      ref: { type: 'string' },
-                      text: { type: 'string' },
-                      key: { type: 'string' },
-                    },
-                  },
-                },
-              },
-              required: ['workflow'],
+              properties: { url: { type: 'string' } },
+              required: ['url'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
+          name: 'browser_click',
+          description: 'ref(eXX) で特定した要素をクリックします（実行後のARIA/Textスナップショットを返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { ref: { type: 'string' } },
+              required: ['ref'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
+          name: 'browser_input',
+          description: 'ref(eXX) で特定した要素にテキストを入力します（実行後のARIA/Textスナップショットを返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { ref: { type: 'string' }, text: { type: 'string' } },
+              required: ['ref', 'text'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
+          name: 'browser_press',
+          description: 'ref(eXX) で特定した要素に対してキーボード押下を送ります（実行後のARIA/Textスナップショットを返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { ref: { type: 'string' }, key: { type: 'string' } },
+              required: ['ref', 'key'],
             },
           },
         },
@@ -143,24 +167,82 @@ export async function converseLoop(
       messages.push({ role: 'assistant', content: assistantMsg?.content ?? [] });
 
       const toolResults: any[] = [];
-      for (const block of assistantMsg?.content ?? []) {
+
+      // 受け取った tool_use を並列実行可能なものと順次実行が必要なものに仕分け
+      type Task = { index: number; toolUseId: string; run: () => Promise<string> };
+      const browserTasks: Task[] = [];
+      const parallelTasks: Task[] = [];
+
+      const contentBlocks = assistantMsg?.content ?? [];
+      for (let i = 0; i < contentBlocks.length; i += 1) {
+        const block = contentBlocks[i]!;
         if (!block.toolUse) continue;
         const toolUse = block.toolUse as ToolUseInput;
         const name = toolUse.name;
         const toolUseId = (toolUse as any).toolUseId as string;
         if (name === 'run_cypher') {
           const q = (toolUse as any).input?.query ?? '';
-          console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
-          const result = await runCypher(String(q));
-          console.log(`Tool result (run_cypher): ${result}`);
-          toolResults.push({ toolResult: { toolUseId, content: [{ text: result }], status: 'success' } });
-        } else if (name === 'execute_workflow') {
-          const wf = (toolUse as any).input?.workflow ?? [];
-          console.log(`Executing workflow: ${JSON.stringify(wf, null, 2)}`);
-          const result = await executeWorkflow(wf);
-          console.log(`Tool result (execute_workflow): ${result.substring(0, 1000)}${result.length > 1000 ? '...': ''}`);
-          toolResults.push({ toolResult: { toolUseId, content: [{ text: result }], status: 'success' } });
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
+            const result = await runCypher(String(q));
+            console.log(`Tool result (run_cypher): ${result}`);
+            return result;
+          }});
+        } else if (name === 'browser_goto') {
+          const url = (toolUse as any).input?.url ?? '';
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url })}`);
+            const result = await browserGoto(String(url));
+            console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_click') {
+          const ref = (toolUse as any).input?.ref ?? '';
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_click ${JSON.stringify({ ref })}`);
+            const result = await browserClick(String(ref));
+            console.log(`Tool result (browser_click): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_input') {
+          const ref = (toolUse as any).input?.ref ?? '';
+          const text = (toolUse as any).input?.text ?? '';
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_input ${JSON.stringify({ ref, text })}`);
+            const result = await browserInput(String(ref), String(text));
+            console.log(`Tool result (browser_input): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_press') {
+          const ref = (toolUse as any).input?.ref ?? '';
+          const key = (toolUse as any).input?.key ?? '';
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_press ${JSON.stringify({ ref, key })}`);
+            const result = await browserPress(String(ref), String(key));
+            console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
         }
+      }
+
+      // 並列実行（DBクエリなどブラウザ非依存）
+      const parallelResults = await Promise.all(parallelTasks.map(async (t) => ({
+        index: t.index,
+        toolUseId: t.toolUseId,
+        text: await t.run(),
+      })));
+
+      // ブラウザ操作は順序保証のため逐次実行
+      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = [];
+      for (const t of browserTasks) {
+        const text = await t.run();
+        browserResults.push({ index: t.index, toolUseId: t.toolUseId, text });
+      }
+
+      // 元の順序にマージ
+      const merged = [...parallelResults, ...browserResults].sort((a, b) => a.index - b.index);
+      for (const r of merged) {
+        toolResults.push({ toolResult: { toolUseId: r.toolUseId, content: [{ text: r.text }], status: 'success' } });
       }
       if (toolResults.length) {
         console.log(`Adding tool results to messages: ${JSON.stringify(toolResults)}`);

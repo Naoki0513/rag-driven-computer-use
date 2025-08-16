@@ -99,47 +99,108 @@ type WorkflowStep =
   | { action: 'input'; ref: string; text: string }
   | { action: 'press'; ref: string; key: string };
 
+// 共通ヘルパー: ARIA/Text スナップショットの取得
+async function takeSnapshots(page: Page): Promise<{ aria: any; text: string }> {
+  const aria = await page.accessibility.snapshot().catch(() => ({}));
+  const text = await getSnapshotForAI(page).catch(() => '');
+  return { aria, text };
+}
+
+// 共通ヘルパー: ref(eXX) から Locator を解決
+async function installRefSnapshotProvider(page: Page): Promise<void> {
+  const makeSnapshot = async (): Promise<string> => {
+    const tree: any = await page.accessibility.snapshot().catch(() => ({}));
+    const lines: string[] = [];
+    let counter = 1;
+    const walk = (node: any, depth: number) => {
+      if (!node || typeof node !== 'object') return;
+      const role = String(node.role ?? 'generic');
+      const name = typeof node.name === 'string' ? node.name : undefined;
+      const ref = `e${counter++}`;
+      const label = name && name.trim().length > 0 ? `${role} "${name}" [ref=${ref}]` : `${role} [ref=${ref}]`;
+      lines.push(`${'  '.repeat(depth)}- ${label}`);
+      const children: any[] = Array.isArray(node.children) ? node.children : [];
+      for (const c of children) walk(c, depth + 1);
+    };
+    walk(tree, 0);
+    return lines.join('\n');
+  };
+  (page as any)._snapshotForAI = makeSnapshot;
+}
+
+async function resolveLocatorByRef(page: Page, ref: string) {
+  await installRefSnapshotProvider(page);
+  const snapText = await getSnapshotForAI(page);
+  const roleName = findRoleAndNameByRef(snapText, ref);
+  if (!roleName) throw new Error(`ref=${ref} に対応する要素が見つかりません (現在のARIAスナップショット)`);
+  const { role, name } = roleName;
+  const locator = name && name.trim().length > 0
+    ? page.getByRole(role as any, { name, exact: true } as any)
+    : page.getByRole(role as any);
+  await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+  return { locator, role, name } as const;
+}
+
+// 個別ツール: ブラウザ操作（goto/click/input/press）
+export async function browserGoto(url: string): Promise<string> {
+  const { page } = await ensureSharedBrowserStarted();
+  try {
+    await page.goto(url);
+    await page.waitForLoadState('networkidle').catch(() => {});
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: true, action: 'goto', url, snapshots: { aria: snaps.aria, text: snaps.text } });
+  } catch (e: any) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'goto', url, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+  }
+}
+
+export async function browserClick(ref: string): Promise<string> {
+  const { page } = await ensureSharedBrowserStarted();
+  try {
+    const { locator, role, name } = await resolveLocatorByRef(page, ref);
+    await locator.first().click();
+    await page.waitForLoadState('networkidle').catch(() => {});
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: true, action: 'click', ref, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+  } catch (e: any) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'click', ref, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+  }
+}
+
+export async function browserInput(ref: string, text: string): Promise<string> {
+  const { page } = await ensureSharedBrowserStarted();
+  try {
+    const { locator, role, name } = await resolveLocatorByRef(page, ref);
+    await locator.first().fill(text);
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: true, action: 'input', ref, text, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+  } catch (e: any) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'input', ref, text, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+  }
+}
+
+export async function browserPress(ref: string, key: string): Promise<string> {
+  const { page } = await ensureSharedBrowserStarted();
+  try {
+    const { locator, role, name } = await resolveLocatorByRef(page, ref);
+    await locator.first().press(key);
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: true, action: 'press', ref, key, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+  } catch (e: any) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'press', ref, key, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+  }
+}
+
 export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string> {
   const { page } = await ensureSharedBrowserStarted();
   const results: string[] = [];
   const snapshots: string[] = [];
   try {
-    // 提供: 現ページのARIAスナップショットに [ref=eXX] を付与する関数を注入
-    async function installRefSnapshotProvider() {
-      const makeSnapshot = async (): Promise<string> => {
-        const tree: any = await page.accessibility.snapshot().catch(() => ({}));
-        const lines: string[] = [];
-        let counter = 1;
-        const walk = (node: any, depth: number) => {
-          if (!node || typeof node !== 'object') return;
-          const role = String(node.role ?? 'generic');
-          const name = typeof node.name === 'string' ? node.name : undefined;
-          const ref = `e${counter++}`;
-          const label = name && name.trim().length > 0 ? `${role} "${name}" [ref=${ref}]` : `${role} [ref=${ref}]`;
-          lines.push(`${'  '.repeat(depth)}- ${label}`);
-          const children: any[] = Array.isArray(node.children) ? node.children : [];
-          for (const c of children) walk(c, depth + 1);
-        };
-        walk(tree, 0);
-        return lines.join('\n');
-      };
-      (page as any)._snapshotForAI = makeSnapshot;
-    }
-
-    async function resolveLocatorByRef(ref: string) {
-      // 必ずプロバイダをセットしてから参照解決
-      await installRefSnapshotProvider();
-      const snapText = await getSnapshotForAI(page);
-      const roleName = findRoleAndNameByRef(snapText, ref);
-      if (!roleName) throw new Error(`ref=${ref} に対応する要素が見つかりません (現在のARIAスナップショット)`);
-      const { role, name } = roleName;
-      const locator = name && name.trim().length > 0
-        ? page.getByRole(role as any, { name, exact: true } as any)
-        : page.getByRole(role as any);
-      // 要素の存在確認
-      await locator.first().waitFor({ state: 'visible', timeout: 30000 });
-      return { locator, role, name } as const;
-    }
+    // 互換: 旧ワークフロー実装は新ヘルパーを使用
 
     for (let i = 0; i < workflow.length; i += 1) {
       const step = workflow[i]!;
@@ -149,16 +210,16 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
           await page.waitForLoadState('networkidle').catch(() => {});
           results.push(`Navigated to ${step.url}`);
         } else if (step.action === 'click') {
-          const { locator, role, name } = await resolveLocatorByRef(step.ref);
+          const { locator, role, name } = await resolveLocatorByRef(page, step.ref);
           await locator.first().click();
           await page.waitForLoadState('networkidle').catch(() => {});
           results.push(`Clicked ref=${step.ref} (${role}${name ? `: ${name}` : ''})`);
         } else if (step.action === 'input') {
-          const { locator, role, name } = await resolveLocatorByRef(step.ref);
+          const { locator, role, name } = await resolveLocatorByRef(page, step.ref);
           await locator.first().fill(step.text);
           results.push(`Input into ref=${step.ref} (${role}${name ? `: ${name}` : ''}) -> ${step.text}`);
         } else if (step.action === 'press') {
-          const { locator, role, name } = await resolveLocatorByRef(step.ref);
+          const { locator, role, name } = await resolveLocatorByRef(page, step.ref);
           await locator.first().press(step.key);
           results.push(`Pressed ${step.key} on ref=${step.ref} (${role}${name ? `: ${name}` : ''})`);
         } else {
@@ -189,6 +250,9 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
 
 export type ToolUseInput =
   | { name: 'run_cypher'; input: { query: string }; toolUseId: string }
-  | { name: 'execute_workflow'; input: { workflow: WorkflowStep[] }; toolUseId: string };
+  | { name: 'browser_goto'; input: { url: string }; toolUseId: string }
+  | { name: 'browser_click'; input: { ref: string }; toolUseId: string }
+  | { name: 'browser_input'; input: { ref: string; text: string }; toolUseId: string }
+  | { name: 'browser_press'; input: { ref: string; key: string }; toolUseId: string };
 
 
