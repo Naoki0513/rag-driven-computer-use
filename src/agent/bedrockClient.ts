@@ -88,18 +88,17 @@ function buildToolConfig(): ToolConfiguration {
 export async function converseLoop(
   query: string,
   systemPrompt: string,
-  modelId: string,
-  region: string,
+  candidates: Array<{ modelId: string; region: string }>,
 ): Promise<ConverseLoopResult> {
-  const client = new BedrockRuntimeClient({ region });
-  console.log(`[OK] AIモデルを初期化しました (region=${region}, model=${modelId})`);
-  const lowerId = modelId.toLowerCase();
-  const isClaude = lowerId.includes('claude');
-  const isNova = lowerId.includes('nova');
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new Error('モデル候補が空です');
+  }
+  const anyClaude = candidates.some((c) => c.modelId.toLowerCase().includes('claude'));
+  const anyNova = candidates.some((c) => c.modelId.toLowerCase().includes('nova'));
 
   const toolConfig = buildToolConfig();
   const system: SystemContentBlock[] = [{ text: systemPrompt } as SystemContentBlock];
-  if (isClaude) {
+  if (anyClaude) {
     system.push({ cachePoint: { type: 'default' } } as unknown as SystemContentBlock);
   }
   const messages: Message[] = [{ role: 'user', content: [{ text: query }] }];
@@ -111,43 +110,49 @@ export async function converseLoop(
   let fullText = '';
 
   while (true) {
-    const currentMessages = addCachePoints(messages, isClaude, isNova);
-    const additionalModelRequestFields: Record<string, any> = {};
-    const enableAnthropicBeta = modelId === 'us.anthropic.claude-sonnet-4-20250514-v1:0';
-    if (enableAnthropicBeta) {
-      // Anthropic Beta: Context 1M (configurable via env, default provided). Only for the specific model.
-      const betaTag = process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07';
-      additionalModelRequestFields['anthropic_beta'] = [betaTag];
-    }
-    const cmd = new ConverseCommand({
-      modelId,
-      system,
-      toolConfig,
-      messages: currentMessages as any,
-      inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
-      // Add provider-specific request headers/fields
-      additionalModelRequestFields,
-    });
-
-    const maxRetries = 3;
-    let attempt = 0;
+    const currentMessages = addCachePoints(messages, anyClaude, anyNova);
+    // 各ターンごとにプライマリから順に試行（エラー時は都度プライマリに戻す）
     let response: ConverseResponse | undefined;
-    let lastErr: any;
-    while (attempt <= maxRetries) {
+    let lastError: any;
+    for (let i = 0; i < candidates.length; i += 1) {
+      const { modelId, region } = candidates[i]!;
+      console.log(`[PerTurn Failover] 試行 ${i + 1}/${candidates.length}: model=${modelId}, region=${region}`);
+      const client = new BedrockRuntimeClient({ region });
+      const lowerId = modelId.toLowerCase();
+
+      const additionalModelRequestFields: Record<string, any> = {};
+      const betaTags: string[] = [];
+      if (modelId === 'us.anthropic.claude-sonnet-4-20250514-v1:0') {
+        betaTags.push(process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07');
+      }
+      if (lowerId.includes('anthropic.claude-3-7-sonnet-20250219')) {
+        betaTags.push('token-efficient-tools-2025-02-19');
+      }
+      if (betaTags.length) additionalModelRequestFields['anthropic_beta'] = betaTags;
+
+      const cmd = new ConverseCommand({
+        modelId,
+        system,
+        toolConfig,
+        messages: currentMessages as any,
+        inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+        additionalModelRequestFields,
+      });
+      if (Object.keys(additionalModelRequestFields).length) {
+        console.log(`[Debug] additionalModelRequestFields: ${JSON.stringify(additionalModelRequestFields)}`);
+      }
       try {
         response = await client.send(cmd);
         break;
       } catch (e: any) {
-        lastErr = e;
         const msg = String(e?.name || e?.message || e);
-        if (!/Throttling/i.test(msg) || attempt === maxRetries) throw e;
-        const backoffMs = Math.min(60000, 15000 * Math.pow(2, attempt));
-        console.log(`Throttlingエラーが発生しました。${Math.round(backoffMs / 1000)}秒待機してリトライします... (試行 ${attempt + 1}/${maxRetries + 1})`);
-        await new Promise((r) => setTimeout(r, backoffMs));
-        attempt += 1;
+        if (/Throttling/i.test(msg)) console.log('Throttlingエラーを検出: リトライせず次候補へ');
+        else console.log(`[PerTurn Failover] エラー: ${msg} → 次候補へ`);
+        lastError = e;
+        continue;
       }
     }
-    if (!response) throw lastErr ?? new Error('No response from Bedrock');
+    if (!response) throw lastError ?? new Error('No response from Bedrock');
 
     const usage = response.usage ?? ({} as any);
     totalInput += usage.inputTokens ?? 0;
@@ -232,12 +237,10 @@ export async function converseLoop(
         text: await t.run(),
       })));
 
-      // ブラウザ操作は順序保証のため逐次実行
-      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = [];
-      for (const t of browserTasks) {
-        const text = await t.run();
-        browserResults.push({ index: t.index, toolUseId: t.toolUseId, text });
-      }
+      // ブラウザ操作は並列実行
+      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = await Promise.all(
+        browserTasks.map(async (t) => ({ index: t.index, toolUseId: t.toolUseId, text: await t.run() }))
+      );
 
       // 元の順序にマージ
       const merged = [...parallelResults, ...browserResults].sort((a, b) => a.index - b.index);

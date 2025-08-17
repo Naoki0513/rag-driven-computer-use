@@ -87,9 +87,9 @@ npm run start:crawler
 #### 実行方法（エージェント）
 ```bash
 npm run build
-npm run start:agent -- "ノード数を教えて"
+npm run start:agent -- "会社プラットフォームの `#general` を開き、次を満たすメッセージを投稿する: 1) Hi を含む、2) kissing_smiling_eyes 絵文字を含む、3) その部屋のアクティブユーザーに通知する。"
 # または環境変数を利用
-setx AGENT_QUERY "状態の種類ごとに集計して"
+setx AGENT_QUERY "会社プラットフォームの `#general` を開き、次を満たすメッセージを投稿する: 1) Hi を含む、2) kissing_smiling_eyes 絵文字を含む、3) その部屋のアクティブユーザーに通知する。"
 npm run start:agent
 ```
 

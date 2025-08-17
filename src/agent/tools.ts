@@ -2,7 +2,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import type { Driver } from 'neo4j-driver';
 import { createDriver, closeDriver } from '../utilities/neo4j.js';
 import { getSnapshotForAI } from '../utilities/snapshots.js';
-import { findRoleAndNameByRef } from '../utilities/text.js';
+import { findRoleAndNameByRef, computeSha256Hex } from '../utilities/text.js';
 
 export async function runCypher(query: string): Promise<string> {
   const uri = process.env.AGENT_NEO4J_URI;
@@ -100,10 +100,11 @@ type WorkflowStep =
   | { action: 'press'; ref: string; key: string };
 
 // 共通ヘルパー: ARIA/Text スナップショットの取得
-async function takeSnapshots(page: Page): Promise<{ aria: any; text: string }> {
+async function takeSnapshots(page: Page): Promise<{ aria: any; text: string; hash: string }> {
   const aria = await page.accessibility.snapshot().catch(() => ({}));
   const text = await getSnapshotForAI(page).catch(() => '');
-  return { aria, text };
+  const hash = computeSha256Hex(text);
+  return { aria, text, hash };
 }
 
 // 共通ヘルパー: ref(eXX) から Locator を解決
@@ -148,10 +149,10 @@ export async function browserGoto(url: string): Promise<string> {
     await page.goto(url);
     await page.waitForLoadState('networkidle').catch(() => {});
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: true, action: 'goto', url, snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: true, action: 'goto', url, snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   } catch (e: any) {
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: false, action: 'goto', url, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: false, action: 'goto', url, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   }
 }
 
@@ -162,10 +163,10 @@ export async function browserClick(ref: string): Promise<string> {
     await locator.first().click();
     await page.waitForLoadState('networkidle').catch(() => {});
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: true, action: 'click', ref, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: true, action: 'click', ref, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   } catch (e: any) {
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: false, action: 'click', ref, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: false, action: 'click', ref, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   }
 }
 
@@ -175,10 +176,10 @@ export async function browserInput(ref: string, text: string): Promise<string> {
     const { locator, role, name } = await resolveLocatorByRef(page, ref);
     await locator.first().fill(text);
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: true, action: 'input', ref, text, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: true, action: 'input', ref, text, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   } catch (e: any) {
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: false, action: 'input', ref, text, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: false, action: 'input', ref, text, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   }
 }
 
@@ -188,10 +189,10 @@ export async function browserPress(ref: string, key: string): Promise<string> {
     const { locator, role, name } = await resolveLocatorByRef(page, ref);
     await locator.first().press(key);
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: true, action: 'press', ref, key, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: true, action: 'press', ref, key, target: { role, name }, snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   } catch (e: any) {
     const snaps = await takeSnapshots(page);
-    return JSON.stringify({ success: false, action: 'press', ref, key, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text } });
+    return JSON.stringify({ success: false, action: 'press', ref, key, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
   }
 }
 
