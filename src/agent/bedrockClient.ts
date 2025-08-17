@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { runCypher, browserGoto, browserClick, browserInput, browserPress, type ToolUseInput } from './tools.js';
+import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
 export type ConverseLoopResult = {
   fullText: string;
@@ -141,10 +142,32 @@ export async function converseLoop(
       if (Object.keys(additionalModelRequestFields).length) {
         console.log(`[Debug] additionalModelRequestFields: ${JSON.stringify(additionalModelRequestFields)}`);
       }
+      const obsHandle = recordBedrockCallStart({
+        modelId,
+        region,
+        input: {
+          system,
+          toolConfig,
+          messages: currentMessages,
+          inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+          additionalModelRequestFields,
+        },
+      });
       try {
         response = await client.send(cmd);
+        try {
+          const usage = (response as any)?.usage ?? undefined;
+          const out: any = (response as any)?.output;
+          let textOut: string | undefined = undefined;
+          const content = out?.message?.content ?? [];
+          for (const block of content) if (block?.text) textOut = (textOut ?? '') + block.text;
+          const payload: any = { usage, response };
+          if (typeof textOut === 'string') payload.outputText = textOut;
+          recordBedrockCallSuccess(obsHandle, payload);
+        } catch {}
         break;
       } catch (e: any) {
+        try { recordBedrockCallError(obsHandle, e, { modelId, region }); } catch {}
         const msg = String(e?.name || e?.message || e);
         if (/Throttling/i.test(msg)) console.log('Throttlingエラーを検出: リトライせず次候補へ');
         else console.log(`[PerTurn Failover] エラー: ${msg} → 次候補へ`);
@@ -260,6 +283,7 @@ export async function converseLoop(
     throw new Error(`未知のstopReason: ${stopReason}`);
   }
 
+  try { await flushObservability(); } catch {}
   return { fullText, usage: { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite } };
 }
 

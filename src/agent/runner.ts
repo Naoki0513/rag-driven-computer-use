@@ -2,6 +2,7 @@ import { converseLoop } from './bedrockClient.js';
 import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
 import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools.js';
+import { startSessionTrace } from '../utilities/observability.js';
 
 type ModelCandidate = { modelId: string; region: string };
 
@@ -59,6 +60,10 @@ export async function runSingleQuery(query: string): Promise<void> {
   }
   const candidates = buildModelCandidates();
   console.log(`[OK] 実行環境チェックに成功しました。モデル候補数=${candidates.length}`);
+
+  // Langfuse セッション（1回の runSingleQuery を1セッションとして紐づけ）
+  const sessionId = `agent-session-${Date.now()}`;
+  startSessionTrace(sessionId, 'WebGraph Agent Session', { queryPreview: query.slice(0, 120) });
 
   // まず最初にブラウザを起動（以降の実行で共有・再利用）
   await ensureSharedBrowserStarted();
