@@ -8,56 +8,53 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
 現在のデータベースの構造：
 ${databaseSchema}
 
-以下のガイドラインに従ってください：
+以下のワークフローのみを厳密に実行してください（余計な操作は行わない）。各ステップの参考クエリ/方針を併記します。
 
-1. 最重要ルール（スキーマ説明の扱い）
-   - 「データベースの構造を教えて」のような質問には、上記の「現在のデータベースの構造」セクションの内容をそのまま引用して回答します
-   - そのための追加クエリは実行しません（必要な情報は提供済み）
+0. 起点（ブラウザ起動）
+   - 最初はChromeのデフォルトページ（about:blank 等）のまま開始します。自動ログインや特定サイトへの自動遷移は禁止。
 
-2. 経路決定の基本方針（エージェントの探索計画）
-   - まず Page.snapshot_for_ai に対してキーワード検索を行い、目的を達成できそうなページ候補を特定します
-     例: MATCH (p:Page) WHERE p.snapshot_for_ai CONTAINS 'キーワード' RETURN p.url, p.depth, p.snapshot_hash LIMIT 50
-   - 次に「現在地」を同定します。
-     1) ブラウザで現在表示中のページから ARIA/Text スナップショット（＝エリアスナップショット）を取得し、その内容から snapshot_hash を再計算します
-     2) グラフ上で Page.snapshot_hash が一致するノードを検索します
-        例: MATCH (p:Page { snapshot_hash: $hash }) RETURN p LIMIT 1
-     3) 一致が無い場合は URL で近傍（同一 URL または正規化後に一致するURL）を検索し代替の現在地候補を決定します
-        例: MATCH (p:Page) WHERE p.url CONTAINS $urlBase RETURN p LIMIT 5
-   - 目的ページ（ターゲット）と現在地（ソース）が定まったら、両者を結ぶルートをグラフ上のリレーションから抽出します。
-     - リレーションは CLICK_TO を基本とし、プロパティ action_type と ref（必要なら href/role/name）を使用して操作列を復元します
-     - 例: MATCH path = (s:Page {snapshot_hash:$src})-[:CLICK_TO*1..6]->(t:Page {snapshot_hash:$dst}) RETURN path LIMIT 3
-     - パスごとに各ステップの (action_type, ref) のペアを順序付きで収集します（1手目→2手目→…）
+1. ToDoの策定（計画）
+   - ユーザーのリクエストから目的サイト・目的キーワード・ゴール条件を抽出し、短いToDoリスト（箇条書き）を作成してから実行に移る。
 
-3. 実行計画の構築
-   - 収集した (action_type, ref) の配列から、ツール呼び出しのシーケンスを構築します
-     - action_type=click → browser_click({ ref })
-     - 入力が必要な場合は browser_input、確定は browser_press を組み合わせます
-     - 最初の1手目の前に必要なら browser_goto({ url }) を入れて現在地を揃えます（URL一致/近傍一致で決定）
+2. ブラウザログイン
+   - ユーザーのリクエストからアクセスすべきサイトURLを推定し、browser_login を1回だけ実行。
+     {"tool_use": {"name": "browser_login", "input": {"url": "https://target.example.com/login"}, "toolUseId": "t_login"}}
+   - 実行後に返却される snapshots.hash を「現在地（sourceHash）」とみなす。
 
-4. 実行（ツール利用の指針）
-   - 1ターン内で複数の tool_use を列挙して一括指示します
-   - 並列実行の原則（重要）: ブラウザ操作を含むすべてのツール呼び出しは可能な限り並列実行してください
-     - browser_goto / browser_click / browser_input / browser_press は同一ターン内で複数列挙し、並列化前提で設計します
-     - run_cypher も同様に並列化可能です
-   - CSS セレクタは使用せず、ref(eXX) を優先して指定します（実行時に role/name へ解決）
+3. 目的候補ページの特定（キーワード検索; 上位5件まで）
+   - 参考クエリ（キーワードはユーザー要求から抽出し、過度なトークン消費を避けるため LIMIT 5）:
+     MATCH (p:Page) WHERE p.snapshot_for_ai CONTAINS 'キーワード' RETURN p.url, p.depth, p.snapshot_hash, p.snapshot_for_ai LIMIT 5
+   - 得られた候補からゴール条件を最も満たす1件を選び、その p.snapshot_hash を「targetHash」とする。
 
-5. 参考クエリ（出発点の把握や俯瞰）
-   - depth=1 の概要把握:
-     MATCH (p:Page { depth: 1 }) RETURN p.site AS site, count(*) AS pages ORDER BY pages DESC
-   - 目的キーワードの探索:
-     MATCH (p:Page) WHERE p.snapshot_for_ai CONTAINS 'キーワード' RETURN p.url, p.depth, p.snapshot_hash LIMIT 20
-   - CLICK_TO パスの抽出:
-     MATCH (s:Page { depth: 1 })-[:CLICK_TO*1..4]->(t:Page) WHERE t.url CONTAINS '目標' RETURN s.url, t.url LIMIT 20
+4. ルート抽出（CLICK_TO 最短経路）
+   - 参考クエリ（操作列の抽出; 1..10 の範囲で最短）:
+     MATCH p = shortestPath((:Page { snapshot_hash: $sourceHash })-[:CLICK_TO*..10]->(:Page { snapshot_hash: $targetHash }))
+     WITH relationships(p) AS rs
+     UNWIND range(0, size(rs)-1) AS step
+     WITH step, rs[step] AS r
+     RETURN step + 1 AS step_no, r.action_type AS action_type, r.role AS role, r.name AS name, r.ref AS ref, r.href AS href
+     ORDER BY step_no
+   - 取得した (action_type, ref) の列を実行計画とする。
 
-6. 回答フォーマット
-   - 実行前に「分析（候補選定）→現在地同定→ルート抽出→実行計画（並列ツール列挙）」を日本語で簡潔に説明
-   - 実行後は結果と次のアクション候補を日本語で説明
+5. 実行計画の実行（並列化方針）
+   - action_type=click → browser_click({ ref })
+   - 入力が必要なら browser_input、確定は browser_press
+   - 依存関係が無い操作は同一ターンに並列で列挙する。DB側の run_cypher も同様に並列可能。
+   - 例（同一ターンでの並列ツール呼び出し）:
+     {"tool_use": {"name": "browser_click", "input": {"ref": "e12"}, "toolUseId": "t2"}}
+     {"tool_use": {"name": "browser_input", "input": {"ref": "e21", "text": "foo"}, "toolUseId": "t3"}}
+     {"tool_use": {"name": "browser_press", "input": {"ref": "e21", "key": "Enter"}, "toolUseId": "t4"}}
 
-7. エラー時の対応
-   - 原因を説明し、修正案（別のルート探索、URL近傍での再同定、ref の再解決など）を提示してください
+6. 達成確認と終了
+   - 遷移後のスナップショットにゴール指標（キーワードやUIの状態変化等）が含まれるかを確認し、満たされていれば完了とする。
 
-回答は必ず日本語で。
-`;
+注意事項
+- ref(eXX) を最優先で使用（Playwrightロケーターの基準）。
+- 長大なスナップショット送信は避ける（候補は常に上位5件に制限）。
+- このワークフロー外の行動（自動ログイン、不要なナビゲーション、クロール開始など）は行わない。
+
+ 回答は必ず日本語で。
+  `;
 }
 
 export function createSystemPromptWithSchema(databaseSchema: string = ""): string {

@@ -6,7 +6,7 @@ import {
   type SystemContentBlock,
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
-import { runCypher, browserGoto, browserClick, browserInput, browserPress, type ToolUseInput } from './tools.js';
+import { runCypher, browserLogin, browserGoto, browserClick, browserInput, browserPress, type ToolUseInput } from './tools.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
 export type ConverseLoopResult = {
@@ -26,6 +26,19 @@ function buildToolConfig(): ToolConfiguration {
               type: 'object',
               properties: { query: { type: 'string' } },
               required: ['query'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
+          name: 'browser_login',
+          description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします（実行後のARIA/Textスナップショットを返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { url: { type: 'string' } },
+              required: ['url'],
             },
           },
         },
@@ -214,6 +227,14 @@ export async function converseLoop(
             console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
             const result = await runCypher(String(q));
             console.log(`Tool result (run_cypher): ${result}`);
+            return result;
+          }});
+        } else if (name === 'browser_login') {
+          const url = (toolUse as any).input?.url ?? '';
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_login ${JSON.stringify({ url })}`);
+            const result = await browserLogin(String(url));
+            console.log(`Tool result (browser_login): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_goto') {

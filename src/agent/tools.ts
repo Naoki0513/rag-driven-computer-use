@@ -37,29 +37,6 @@ let sharedBrowser: Browser | null = null;
 let sharedContext: BrowserContext | null = null;
 let sharedPage: Page | null = null;
 
-async function performOptionalPreLogin(page: Page): Promise<void> {
-  const domain = process.env.AGENT_BROWSER_DOMAIN;
-  const username = process.env.AGENT_BROWSER_USERNAME;
-  const password = process.env.AGENT_BROWSER_PASSWORD;
-  if (!(domain && username && password)) return;
-  try {
-    console.log(`[Login] ${domain} にアクセスしてログインを試行します`);
-    await page.goto(domain);
-    await page.waitForLoadState('networkidle').catch(() => {});
-    const loginInput = await page.$('input[name="emailOrUsername"]');
-    if (loginInput) await loginInput.fill(username);
-    const pwInput = await page.$('input[type="password"]');
-    if (pwInput) await pwInput.fill(password);
-    const submit = await page.$('button.login');
-    if (submit) await submit.click();
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForTimeout(5000).catch(() => {});
-    console.log('Pre-login succeeded');
-  } catch (e: any) {
-    console.log(`Pre-login failed: ${String(e?.message ?? e)}`);
-  }
-}
-
 export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
   if (sharedBrowser && sharedContext && sharedPage) {
     return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
@@ -68,7 +45,6 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   sharedBrowser = await chromium.launch({ headless: !headful });
   sharedContext = await sharedBrowser.newContext();
   sharedPage = await sharedContext.newPage();
-  await performOptionalPreLogin(sharedPage);
   console.log('[OK] 共有 Playwright ブラウザを起動しました');
   return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
 }
@@ -140,6 +116,102 @@ async function resolveLocatorByRef(page: Page, ref: string) {
     : page.getByRole(role as any);
   await locator.first().waitFor({ state: 'visible', timeout: 30000 });
   return { locator, role, name } as const;
+}
+
+// 新規ツール: ブラウザログイン（指定URLへ移動し、環境変数の資格情報でログイン）
+export async function browserLogin(url: string): Promise<string> {
+  const { page } = await ensureSharedBrowserStarted();
+  const username = String(process.env.AGENT_BROWSER_USERNAME ?? '').trim();
+  const password = String(process.env.AGENT_BROWSER_PASSWORD ?? '').trim();
+  if (!username || !password) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'login', url, error: 'AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD が未設定です', snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
+  }
+  try {
+    if (url && url.trim().length > 0) {
+      await page.goto(url);
+      await page.waitForLoadState('networkidle').catch(() => {});
+    }
+
+    // ユーザー名/メール入力欄の候補
+    const userSelectors = [
+      'input[name="emailOrUsername"]',
+      'input[name="email"]',
+      'input[name="username"]',
+      'input[name="user"]',
+      'input[type="email"]',
+      'input[autocomplete="username"]',
+      'input[id*="email" i]',
+      'input[id*="user" i]',
+      'input[placeholder*="メール" i]',
+      'input[placeholder*="email" i]',
+      'input[placeholder*="ユーザー" i]',
+      'input[placeholder*="username" i]'
+    ];
+    let userFilled = false;
+    for (const sel of userSelectors) {
+      const el = await page.$(sel);
+      if (el) {
+        await el.fill(username);
+        userFilled = true;
+        break;
+      }
+    }
+
+    // パスワード入力欄の候補
+    const passSelectors = [
+      'input[type="password"]',
+      'input[name="password"]',
+      'input[autocomplete="current-password"]',
+      'input[id*="pass" i]',
+      'input[placeholder*="パスワード" i]',
+      'input[placeholder*="password" i]'
+    ];
+    let pwFilled = false;
+    let pwEl: any = null;
+    for (const sel of passSelectors) {
+      const el = await page.$(sel);
+      if (el) {
+        await el.fill(password);
+        pwFilled = true;
+        pwEl = el;
+        break;
+      }
+    }
+
+    // 送信ボタン候補
+    const submitSelectors = [
+      'button[type="submit"]',
+      'input[type="submit"]',
+      'button:has-text("ログイン")',
+      'button:has-text("サインイン")',
+      'button:has-text("Sign in")',
+      'button:has-text("Log in")',
+      'text=ログイン >> xpath=ancestor::button',
+    ];
+    let clicked = false;
+    for (const sel of submitSelectors) {
+      const el = await page.$(sel);
+      if (el) {
+        await el.click();
+        clicked = true;
+        break;
+      }
+    }
+
+    if (!clicked && pwEl) {
+      // ボタンが見つからない場合は Enter キーでの送信を試行
+      try { await pwEl.press('Enter'); } catch {}
+    }
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(1000).catch(() => {});
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: true, action: 'login', url, snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
+  } catch (e: any) {
+    const snaps = await takeSnapshots(page);
+    return JSON.stringify({ success: false, action: 'login', url, error: String(e?.message ?? e), snapshots: { aria: snaps.aria, text: snaps.text, hash: snaps.hash } });
+  }
 }
 
 // 個別ツール: ブラウザ操作（goto/click/input/press）
@@ -251,6 +323,7 @@ export async function executeWorkflow(workflow: WorkflowStep[]): Promise<string>
 
 export type ToolUseInput =
   | { name: 'run_cypher'; input: { query: string }; toolUseId: string }
+  | { name: 'browser_login'; input: { url: string }; toolUseId: string }
   | { name: 'browser_goto'; input: { url: string }; toolUseId: string }
   | { name: 'browser_click'; input: { ref: string }; toolUseId: string }
   | { name: 'browser_input'; input: { ref: string; text: string }; toolUseId: string }
