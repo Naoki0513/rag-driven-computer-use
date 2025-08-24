@@ -1,7 +1,7 @@
-import { converseLoop } from './bedrockClient.js';
+import { converseLoop } from './converse.js';
 import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
-import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools.js';
+import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools/util.js';
 import { startSessionTrace } from '../utilities/observability.js';
 
 type ModelCandidate = { modelId: string; region: string };

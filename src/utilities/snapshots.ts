@@ -1,5 +1,4 @@
 import type { Page } from 'playwright';
-import yaml from 'js-yaml';
 import type { NodeState } from './types.js';
 import { normalizeUrl } from './url.js';
 import { computeSha256Hex } from './text.js';
@@ -25,23 +24,14 @@ export async function captureNode(page: Page, options: { depth: number }): Promi
   };
 }
 
-export async function getAccessibilitySnapshot(page: Page): Promise<Record<string, unknown>> {
-  const tree = await page.accessibility.snapshot().catch(() => ({}));
-  return tree as Record<string, unknown>;
-}
-
 type PageWithSnapshotForAI = Page & { _snapshotForAI?: () => Promise<string> };
 
 export async function getSnapshotForAI(page: Page): Promise<string> {
-  try {
-    const pw = page as PageWithSnapshotForAI;
-    if (typeof pw._snapshotForAI === 'function') {
-      const text = await pw._snapshotForAI();
-      if (typeof text === 'string' && text.trim().length > 0) return text;
-    }
-  } catch {}
-  const tree = await getAccessibilitySnapshot(page);
-  return yaml.dump(tree, { noRefs: true });
+  const pw = page as PageWithSnapshotForAI;
+  if (typeof pw._snapshotForAI !== 'function') throw new Error('_snapshotForAI is not available on this page');
+  const text = await pw._snapshotForAI();
+  if (typeof text !== 'string' || text.trim().length === 0) throw new Error('_snapshotForAI returned empty text');
+  return text;
 }
 
 

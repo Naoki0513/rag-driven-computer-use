@@ -1,12 +1,18 @@
 import {
   BedrockRuntimeClient,
   ConverseCommand,
-  type ToolConfiguration,
   type ConverseResponse,
   type SystemContentBlock,
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
-import { runCypher, browserLogin, browserGoto, browserClick, browserInput, browserPress, type ToolUseInput } from './tools.js';
+import { buildToolConfig } from './tool-config.js';
+import { runCypher } from './tools/run-cypher.js';
+import { browserLogin } from './tools/browser-login.js';
+import { browserGoto } from './tools/browser-goto.js';
+import { browserClick } from './tools/browser-click.js';
+import { browserInput } from './tools/browser-input.js';
+import { browserPress } from './tools/browser-press.js';
+import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
 export type ConverseLoopResult = {
@@ -14,91 +20,6 @@ export type ConverseLoopResult = {
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 };
 
-function buildToolConfig(): ToolConfiguration {
-  return {
-    tools: [
-      {
-        toolSpec: {
-          name: 'run_cypher',
-          description: 'Neo4jデータベースに対してCypherクエリを実行します',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { query: { type: 'string' } },
-              required: ['query'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
-          name: 'browser_login',
-          description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします（実行後のARIA/Textスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { url: { type: 'string' } },
-              required: ['url'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
-          name: 'browser_goto',
-          description: 'ブラウザで指定URLへ遷移します（実行後のARIA/Textスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { url: { type: 'string' } },
-              required: ['url'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
-          name: 'browser_click',
-          description: 'ref(eXX) で特定した要素をクリックします（実行後のARIA/Textスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { ref: { type: 'string' } },
-              required: ['ref'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
-          name: 'browser_input',
-          description: 'ref(eXX) で特定した要素にテキストを入力します（実行後のARIA/Textスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { ref: { type: 'string' }, text: { type: 'string' } },
-              required: ['ref', 'text'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
-          name: 'browser_press',
-          description: 'ref(eXX) で特定した要素に対してキーボード押下を送ります（実行後のARIA/Textスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { ref: { type: 'string' }, key: { type: 'string' } },
-              required: ['ref', 'key'],
-            },
-          },
-        },
-      },
-    ],
-    toolChoice: { auto: {} },
-  } as ToolConfiguration;
-}
 export async function converseLoop(
   query: string,
   systemPrompt: string,
@@ -307,5 +228,7 @@ export async function converseLoop(
   try { await flushObservability(); } catch {}
   return { fullText, usage: { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite } };
 }
+
+
 
 
