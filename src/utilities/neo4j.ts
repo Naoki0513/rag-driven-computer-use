@@ -58,7 +58,6 @@ export async function createRelation(
   toNode: NodeState,
   interaction: Pick<Interaction, 'actionType' | 'ref' | 'refId' | 'href' | 'role' | 'name'>
 ): Promise<void> {
-  const relType = 'CLICK_TO';
   const actionType = interaction.actionType ?? 'click';
   const ref = interaction.ref ?? interaction.refId ?? extractRefIdFromSnapshot(fromNode.snapshotForAI) ?? '';
   const href = interaction.href ?? '';
@@ -72,25 +71,58 @@ export async function createRelation(
 
   const session = driver.session();
   try {
-    await session.run(
-      `MATCH (a:Page {snapshot_hash: $from_hash})
-       MATCH (b:Page {snapshot_hash: $to_hash})
-       MERGE (a)-[r:${relType}]->(b)
-       SET r.action_type = $action_type,
-           r.ref = $ref,
-           r.href = $href,
-           r.role = $role,
-           r.name = $name`,
-      {
-        from_hash: fromNode.snapshotHash,
-        to_hash: toNode.snapshotHash,
-        action_type: actionType,
-        ref,
-        href,
-        role,
-        name,
-      },
-    );
+    if (actionType === 'navigate') {
+      // NAVIGATE_TO: 目的URLに直接遷移した状態変化
+      // - リレーションは (from)-[:NAVIGATE_TO]->(to) を1本のみ（MERGE）
+      // - プロパティ: action_type = 'navigate_to', url = 遷移先URL
+      // - 同一 from かつ同一 url の NAVIGATE_TO が既に存在する場合は作成しない
+      const existsRes = await session.run(
+        `MATCH (a:Page {snapshot_hash: $from_hash})-[r:NAVIGATE_TO {url: $url}]->()
+         RETURN count(r) AS cnt`,
+        {
+          from_hash: fromNode.snapshotHash,
+          url: href,
+        },
+      );
+      const cnt = (existsRes.records?.[0]?.get?.('cnt')) ?? 0;
+      if (Number(cnt) > 0) {
+        return;
+      }
+      await session.run(
+        `MATCH (a:Page {snapshot_hash: $from_hash})
+         MATCH (b:Page {snapshot_hash: $to_hash})
+         MERGE (a)-[r:NAVIGATE_TO]->(b)
+         SET r.action_type = $action_type,
+             r.url = $url`,
+        {
+          from_hash: fromNode.snapshotHash,
+          to_hash: toNode.snapshotHash,
+          action_type: 'navigate_to',
+          url: href,
+        },
+      );
+    } else {
+      // 既存のクリックなどの関係
+      await session.run(
+        `MATCH (a:Page {snapshot_hash: $from_hash})
+         MATCH (b:Page {snapshot_hash: $to_hash})
+         MERGE (a)-[r:CLICK_TO]->(b)
+         SET r.action_type = $action_type,
+             r.ref = $ref,
+             r.href = $href,
+             r.role = $role,
+             r.name = $name`,
+        {
+          from_hash: fromNode.snapshotHash,
+          to_hash: toNode.snapshotHash,
+          action_type: actionType,
+          ref,
+          href,
+          role,
+          name,
+        },
+      );
+    }
   } finally {
     await session.close();
   }

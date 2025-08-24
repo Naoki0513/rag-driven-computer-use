@@ -111,6 +111,7 @@ export async function processInteraction(
             config.triedActions.add(key);
             console.info(`[processInteraction] primary href navigation -> ${targetUrl}`);
             interaction.href = targetUrl;
+            interaction.actionType = 'navigate';
             await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
             const newNode = await capture(newPage);
             // 既知スナップショットでも上位でリレーション作成できるように常に返す
