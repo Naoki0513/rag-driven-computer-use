@@ -4,7 +4,8 @@ export type ToolUseInput =
   | { name: 'browser_goto'; input: { targetId: number }; toolUseId: string }
   | { name: 'browser_click'; input: { ref: string }; toolUseId: string }
   | { name: 'browser_input'; input: { ref: string; text: string }; toolUseId: string }
-  | { name: 'browser_press'; input: { ref: string; key: string }; toolUseId: string };
+  | { name: 'browser_press'; input: { ref: string; key: string }; toolUseId: string }
+  | { name: 'search_by_keywords'; input: { keywords: string[] }; toolUseId: string };
 
 
 

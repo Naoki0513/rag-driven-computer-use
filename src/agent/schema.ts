@@ -37,7 +37,7 @@ export async function getDatabaseSchemaString(): Promise<string> {
         driver,
         `MATCH (n:${label}) UNWIND keys(n) AS key RETURN DISTINCT key`,
       );
-      nodeProps[label] = props.map((p) => p.key);
+      nodeProps[label] = props.map((p) => p.key).sort();
     }
 
     const relProps: Record<string, string[]> = {};
@@ -46,44 +46,57 @@ export async function getDatabaseSchemaString(): Promise<string> {
         driver,
         `MATCH ()-[x:${r}]->() UNWIND keys(x) AS key RETURN DISTINCT key`,
       );
-      relProps[r] = props.map((p) => p.key);
+      relProps[r] = props.map((p) => p.key).sort();
     }
 
-    const pagePropKeys = nodeProps['Page'] ?? [];
-    const clickToPropKeys = relProps['CLICK_TO'] ?? [];
-    const navigateToPropKeys = relProps['NAVIGATE_TO'] ?? [];
-
+    // 件数情報
     const nodeCounts: string[] = [];
     for (const label of labelList) {
       const res = await queryAll<{ count: number }>(driver, `MATCH (n:${label}) RETURN count(n) as count`);
-      if (res[0]) nodeCounts.push(`  - ${label}: ${res[0].count}ノード (プロパティ: ${(nodeProps[label] ?? []).join(', ')})`);
+      const props = nodeProps[label] ?? [];
+      if (res[0]) nodeCounts.push(`  - ${label}: ${res[0].count}ノード (プロパティ: ${props.length ? props.join(', ') : 'なし'})`);
     }
 
     const relCounts: string[] = [];
     for (const r of relList) {
       const res = await queryAll<{ count: number }>(driver, `MATCH ()-[x:${r}]->() RETURN count(x) as count`);
-      if (res[0]) relCounts.push(`  - ${r}: ${res[0].count}件 (プロパティ: ${(relProps[r] ?? []).join(', ')})`);
+      const props = relProps[r] ?? [];
+      if (res[0]) relCounts.push(`  - ${r}: ${res[0].count}件 (プロパティ: ${props.length ? props.join(', ') : 'なし'})`);
     }
+
+    // ラベル毎/リレーション毎のキー一覧（網羅）
+    const labelsSection = labelList.length
+      ? labelList.map((l) => {
+          const props = nodeProps[l] ?? [];
+          const list = props.length ? props : ['なし'];
+          return `  - ${l}: ${list.join(', ')}`;
+        }).join('\n')
+      : '  - なし';
+
+    const relsSection = relList.length
+      ? relList.map((r) => {
+          const props = relProps[r] ?? [];
+          const list = props.length ? props : ['なし'];
+          return `  - ${r}: ${list.join(', ')}`;
+        }).join('\n')
+      : '  - なし';
 
     const info = `
 データベーススキーマ情報:
 
-- Page ノードのプロパティキー:
-  - ${pagePropKeys.length ? pagePropKeys.join(', ') : '該当なし'}
+- ノードラベルとそのプロパティキー一覧:
+${labelsSection}
 
-- CLICK_TO リレーションのプロパティキー:
-  - ${clickToPropKeys.length ? clickToPropKeys.join(', ') : '該当なし'}
+- リレーションシップタイプとそのプロパティキー一覧:
+${relsSection}
 
-- NAVIGATE_TO リレーションのプロパティキー:
-  - ${navigateToPropKeys.length ? navigateToPropKeys.join(', ') : '該当なし'}
-
-- ノードラベル: ${labelList.length ? labelList.join(', ') : 'なし'}
+- ノードラベル概要: ${labelList.length ? labelList.join(', ') : 'なし'}
 ${nodeCounts.join('\n')}
 
-- リレーションシップタイプ: ${relList.length ? relList.join(', ') : 'なし'}
+- リレーションシップタイプ概要: ${relList.length ? relList.join(', ') : 'なし'}
 ${relCounts.join('\n')}
  
- - エントリページ(depth=1)概要:
+ - 参考（Page 起点のサマリ）:
  ${await (async () => {
    try {
      const depth1Counts = await queryAll<{ site: string; pages: number }>(

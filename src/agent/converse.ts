@@ -7,6 +7,7 @@ import {
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
 import { runCypher } from './tools/run-cypher.js';
+import { searchByKeywords } from './tools/run-cypher.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
@@ -148,6 +149,14 @@ export async function converseLoop(
             console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
             const result = await runCypher(String(q));
             console.log(`Tool result (run_cypher): ${result}`);
+            return result;
+          }});
+        } else if (name === 'search_by_keywords') {
+          const keywords = (toolUse as any).input?.keywords ?? [];
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: search_by_keywords with input: ${JSON.stringify({ keywords })}`);
+            const result = await searchByKeywords(Array.isArray(keywords) ? keywords : []);
+            console.log(`Tool result (search_by_keywords): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_login') {

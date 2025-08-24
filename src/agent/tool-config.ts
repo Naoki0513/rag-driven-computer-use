@@ -31,6 +31,19 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
+          name: 'search_by_keywords',
+          description: 'keywords 配列に含まれる全キーワードを snapshot_for_ai に含む Page を検索します（id(p), snapshot_for_ai, depth, url を返す、最大5件）。',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { keywords: { type: 'array', items: { type: 'string' } } },
+              required: ['keywords'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
           name: 'browser_login',
           description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします（実行後のテキストスナップショットを返却）',
           inputSchema: {

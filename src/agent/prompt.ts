@@ -5,20 +5,21 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
     ? `\n[データベーススキーマ]\n${databaseSchema.trim()}\n`
     : '';
   return `
-実行方針（ツールのみを使用）:
+実行方針:
 
 1) ログイン:
   - ユーザーのプロンプトからアクセス対象のサイト(URL)を特定する。
   - 次を一度だけ実行する: browser_login {"url": "<推定したログインURL>"}
 
 2) グラフDBスキーマの理解:
-  - システムから与えられるスキーマ情報（Page ノード、および CLICK_TO / NAVIGATE_TO のプロパティキー一覧）を前提知識として用いる。
-  - 以降のクエリでプロパティ名を厳密に使用する。
+  - システムから与えられるスキーマ情報（全ノードラベルおよび全リレーションシップタイプと、それぞれに含まれるプロパティキー一覧）を前提知識として用いる。
+  - 以降のクエリでラベル名・リレーション名・プロパティ名を厳密に使用する。
 
 3) キーワード検索（Snapshot for AI）:
   - ユーザーの要求から重要キーワードを抽出する。
-  - run_cypher を使い、Page.snapshot_for_ai にキーワードが含まれるページを検索する。
-    例: run_cypher {"query": "MATCH (p:Page) WHERE toLower(p.snapshot_for_ai) CONTAINS toLower('<keyword>') RETURN id(p) AS id, p.url AS url LIMIT 20"}
+  - 1語以上のキーワードがある場合は search_by_keywords を優先して使い、複数語は AND 条件で検索する（最大5件返却）。
+    例: search_by_keywords {"keywords": ["請求", "ダッシュボード"]}
+  - 必要に応じて run_cypher で追加の絞り込みや確認を行う。
 
 4) 対象ページの決定と遷移:
   - 検索結果から最適なページを選定し、id(p) を取得する。
