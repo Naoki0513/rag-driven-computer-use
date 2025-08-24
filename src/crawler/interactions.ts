@@ -10,14 +10,7 @@ function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null 
 }
 
 async function waitForAppReady(page: Page): Promise<void> {
-  try {
-    await page.waitForLoadState('networkidle', { timeout: 10000 as any });
-    return;
-  } catch {}
-  try {
-    await page.waitForLoadState('domcontentloaded', { timeout: 5000 as any });
-  } catch {}
-  await page.waitForTimeout(1000);
+  await page.waitForLoadState('networkidle', { timeout: 10000 as any });
 }
 
 async function capture(page: Page): Promise<NodeState> {
@@ -142,12 +135,7 @@ export async function processInteraction(
     config.triedActions.add(clickKey);
 
     const locator = newPage.getByRole(resolved.role as any, options as any);
-    try {
-      await locator.first().waitFor({ state: 'visible', timeout: 15000 });
-    } catch {
-      console.warn(`[processInteraction] getByRole fallback target not visible role=${resolved.role}, name=${resolved.name ?? ''}`);
-      return null;
-    }
+    await locator.first().waitFor({ state: 'visible', timeout: 15000 });
 
     await locator.first().click();
     await waitForAppReady(newPage).catch(() => {});

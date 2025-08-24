@@ -34,9 +34,9 @@ export class WebCrawler {
   }
 
   async cleanup(): Promise<void> {
-    try { await this.context?.close(); } catch {}
-    try { await this.browser?.close(); } catch {}
-    try { await closeDriver(this.driver); } catch {}
+    await this.context?.close();
+    await this.browser?.close();
+    await closeDriver(this.driver);
   }
 
   async run(): Promise<void> {
@@ -62,9 +62,8 @@ export class WebCrawler {
       const exhaustive = !!this.config.exhaustive;
       while (this.queue.length > 0) {
         // Stop gracefully if context is gone
-        if (!this.context || (typeof (this.context as any).isClosed === 'function' && (this.context as any).isClosed())) {
-          console.info('Browser context closed; stopping crawl loop.');
-          break;
+        if (!this.context || ((this.context as any).isClosed && (this.context as any).isClosed())) {
+          throw new Error('Browser context closed');
         }
         // Early stop if discovery stagnates significantly
         if (!exhaustive && this.noDiscoveryStreak >= Math.max(3, Math.ceil(this.config.maxDepth / 2))) {
@@ -79,25 +78,10 @@ export class WebCrawler {
         if (!exhaustive && current.depth >= this.config.maxDepth) continue;
 
         // Ensure main page is open
-        if (page.isClosed()) {
-          console.info('Main page closed; stopping crawl loop.');
-          break;
-        } else {
-          try {
-            const currentUrl = current.node.url;
-            await page.goto(currentUrl, { waitUntil: 'networkidle' });
-            await page.waitForTimeout(5000);
-          } catch (e) {
-            const msg = String((e as Error)?.message ?? '');
-            if (msg.includes('Target page') || msg.includes('has been closed')) {
-              console.info('Main page was closed; stopping crawl loop gracefully.');
-              break;
-            }
-            // non-fatal navigation issues: skip this state
-            console.warn('Navigation failed, skipping state:', msg);
-            continue;
-          }
-        }
+        if (page.isClosed()) throw new Error('Main page closed');
+        const currentUrl = current.node.url;
+        await page.goto(currentUrl, { waitUntil: 'networkidle' });
+        await page.waitForTimeout(5000);
 
         const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
         // 1ページあたり全要素を対象にする（並列度は parallelTasks で制御）

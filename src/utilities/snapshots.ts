@@ -4,8 +4,8 @@ import { normalizeUrl } from './url.js';
 import { computeSha256Hex } from './text.js';
 
 export async function captureNode(page: Page, options: { depth: number }): Promise<NodeState> {
-  await page.waitForLoadState('networkidle').catch(() => {});
-  try { await page.waitForTimeout(3000); } catch {}
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(3000);
 
   const rawUrl = page.url();
   const normalizedUrl = normalizeUrl(rawUrl);
