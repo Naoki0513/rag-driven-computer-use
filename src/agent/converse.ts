@@ -9,6 +9,7 @@ import { buildToolConfig } from './tool-config.js';
 import { runCypher } from './tools/run-cypher.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
+import { browserGotoById } from './tools/browser-goto-by-id.js';
 import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
@@ -164,6 +165,14 @@ export async function converseLoop(
             console.log(`Calling tool: browser_goto ${JSON.stringify({ url })}`);
             const result = await browserGoto(String(url));
             console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_goto_by_id') {
+          const targetId = Number((toolUse as any).input?.targetId ?? 0);
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_goto_by_id ${JSON.stringify({ targetId })}`);
+            const result = await browserGotoById(Number(targetId));
+            console.log(`Tool result (browser_goto_by_id): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_click') {

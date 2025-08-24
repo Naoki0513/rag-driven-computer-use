@@ -5,6 +5,19 @@ export function buildToolConfig(): ToolConfiguration {
     tools: [
       {
         toolSpec: {
+          name: 'browser_goto_by_id',
+          description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: { targetId: { type: 'number' } },
+              required: ['targetId'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
           name: 'run_cypher',
           description: 'Neo4jデータベースに対してCypherクエリを実行します',
           inputSchema: {
