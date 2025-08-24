@@ -1,43 +1,45 @@
 let _systemPromptShown = false;
 
 export function createSystemPrompt(databaseSchema: string = ""): string {
+  const schemaSection = (databaseSchema && databaseSchema.trim().length > 0)
+    ? `\n[データベーススキーマ]\n${databaseSchema.trim()}\n`
+    : '';
   return `
-あなたはNeo4jグラフデータベースとPlaywrightを用いて、指定された内部ID(id(n))のPageに到達するための単一アクションを実行します。
+実行方針（ツールのみを使用）:
 
-唯一の目的:
-- ユーザーから与えられる targetId (数値; Neo4j内部ID) に対して、ログイン後に以下のCypherで最寄りのNAVIGATE_TO着地とCLICK_TO最短経路を取得し、
-  その結果に従ってブラウザで遷移・クリックを行い、目的のPageに到達すること。
+1) ログイン:
+  - ユーザーのプロンプトからアクセス対象のサイト(URL)を特定する。
+  - 次を一度だけ実行する: browser_login {"url": "<推定したログインURL>"}
 
-使用するCypher（参照用）:
-MATCH (t:Page)
-WHERE id(t) = $targetId
-MATCH (anyStart:Page)-[nav:NAVIGATE_TO]->(m:Page)
-CALL {
-  WITH m, t
-  MATCH p = shortestPath((m)-[:CLICK_TO*0..25]->(t))
-  RETURN p
-}
-RETURN m.url AS landingUrl,
-       nav.url AS navigateUrl,
-       [r IN relationships(p) | { ref: r.ref, role: r.role, name: r.name, href: r.href }] AS clickSteps,
-       length(p) AS clicks
-ORDER BY clicks ASC
-LIMIT 1
+2) グラフDBスキーマの理解:
+  - システムから与えられるスキーマ情報（Page ノード、および CLICK_TO / NAVIGATE_TO のプロパティキー一覧）を前提知識として用いる。
+  - 以降のクエリでプロパティ名を厳密に使用する。
 
-実行手順（ツール）:
-- 1回だけ、browser_login を最初に実行する（資格情報は環境変数から取得）。
-  入力例: {"tool_use": {"name": "browser_login", "input": {"url": "http://the-agent-company.com:3000/home"}, "toolUseId": "t_login"}}
-- 次に1回だけ、browser_goto_by_id を実行する。
-  入力例: {"tool_use": {"name": "browser_goto_by_id", "input": {"targetId": 123}, "toolUseId": "t1"}}
-- browser_goto_by_id は内部で上記Cypherを用い、
-  1) navigateUrl へ移動,
-  2) clickSteps の ref 順にクリック,
-  3) 最終スナップショットを返却 までを一括で行う。
+3) キーワード検索（Snapshot for AI）:
+  - ユーザーの要求から重要キーワードを抽出する。
+  - run_cypher を使い、Page.snapshot_for_ai にキーワードが含まれるページを検索する。
+    例: run_cypher {"query": "MATCH (p:Page) WHERE toLower(p.snapshot_for_ai) CONTAINS toLower('<keyword>') RETURN id(p) AS id, p.url AS url LIMIT 20"}
+
+4) 対象ページの決定と遷移:
+  - 検索結果から最適なページを選定し、id(p) を取得する。
+  - 一度だけ実行する: browser_goto {"targetId": <選定したページの id>}
+
+5) 画面操作:
+  - 目的達成に必要な範囲でのみ以下を利用する（必要最小限、逐次実行）:
+    - browser_click: {"ref": "eXX"}
+    - browser_input: {"ref": "eXX", "text": "<文字列>"}
+    - browser_press: {"ref": "eXX", "key": "<Enter など>"}
+
+6) 追加のDB参照が必要な場合のみ run_cypher を実行する。
+
+出力ポリシー:
+- 出力は日本語で簡潔に要点のみ。
+- ツール呼び出し以外の不要な説明は行わない。
 
 制約:
-- 他のツール(run_cypher, browser_goto, browser_click など)は使わない。
-- 出力は日本語で簡潔に要点のみ記述する。
-  `;
+- 上記の順序を基本とし、同一ツールの重複連打は避ける（特に browser_login / browser_goto は各1回）。
+- クエリに埋め込む文字列は適切にエスケープする（' を含む場合は " に切替など）。
+${schemaSection}`;
 }
 
 export function createSystemPromptWithSchema(databaseSchema: string = ""): string {

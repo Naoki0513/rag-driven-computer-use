@@ -40,7 +40,18 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
 }
 
 export async function takeSnapshots(page: Page): Promise<{ text: string; hash: string }> {
-  const text = await getSnapshotForAI(page);
+  // ページ遷移直後や動的描画直後にスナップショットが空になるのを防ぐため、待機とリトライを行う
+  const tryOnce = async (): Promise<string> => {
+    try {
+      return await getSnapshotForAI(page);
+    } catch (e: any) {
+      // 一度だけ強めの待機を入れて再試行
+      try { await page.waitForLoadState('networkidle', { timeout: 30000 }); } catch {}
+      try { await page.waitForTimeout(1500); } catch {}
+      return await getSnapshotForAI(page);
+    }
+  };
+  const text = await tryOnce();
   const hash = computeSha256Hex(text);
   return { text, hash };
 }

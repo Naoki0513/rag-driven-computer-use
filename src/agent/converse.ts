@@ -9,7 +9,6 @@ import { buildToolConfig } from './tool-config.js';
 import { runCypher } from './tools/run-cypher.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
-import { browserGotoById } from './tools/browser-goto-by-id.js';
 import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
@@ -160,19 +159,11 @@ export async function converseLoop(
             return result;
           }});
         } else if (name === 'browser_goto') {
-          const url = (toolUse as any).input?.url ?? '';
-          browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ url })}`);
-            const result = await browserGoto(String(url));
-            console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
-            return result;
-          }});
-        } else if (name === 'browser_goto_by_id') {
           const targetId = Number((toolUse as any).input?.targetId ?? 0);
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto_by_id ${JSON.stringify({ targetId })}`);
-            const result = await browserGotoById(Number(targetId));
-            console.log(`Tool result (browser_goto_by_id): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ targetId })}`);
+            const result = await browserGoto(Number(targetId));
+            console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_click') {
@@ -211,10 +202,13 @@ export async function converseLoop(
         text: await t.run(),
       })));
 
-      // ブラウザ操作は並列実行
-      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = await Promise.all(
-        browserTasks.map(async (t) => ({ index: t.index, toolUseId: t.toolUseId, text: await t.run() }))
-      );
+      // ブラウザ操作は順次実行（順序保証・状態共有のため）
+      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = [];
+      const orderedBrowserTasks = [...browserTasks].sort((a, b) => a.index - b.index);
+      for (const t of orderedBrowserTasks) {
+        const text = await t.run();
+        browserResults.push({ index: t.index, toolUseId: t.toolUseId, text });
+      }
 
       // 元の順序にマージ
       const merged = [...parallelResults, ...browserResults].sort((a, b) => a.index - b.index);

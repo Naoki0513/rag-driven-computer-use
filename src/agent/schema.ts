@@ -49,6 +49,10 @@ export async function getDatabaseSchemaString(): Promise<string> {
       relProps[r] = props.map((p) => p.key);
     }
 
+    const pagePropKeys = nodeProps['Page'] ?? [];
+    const clickToPropKeys = relProps['CLICK_TO'] ?? [];
+    const navigateToPropKeys = relProps['NAVIGATE_TO'] ?? [];
+
     const nodeCounts: string[] = [];
     for (const label of labelList) {
       const res = await queryAll<{ count: number }>(driver, `MATCH (n:${label}) RETURN count(n) as count`);
@@ -63,6 +67,16 @@ export async function getDatabaseSchemaString(): Promise<string> {
 
     const info = `
 データベーススキーマ情報:
+
+- Page ノードのプロパティキー:
+  - ${pagePropKeys.length ? pagePropKeys.join(', ') : '該当なし'}
+
+- CLICK_TO リレーションのプロパティキー:
+  - ${clickToPropKeys.length ? clickToPropKeys.join(', ') : '該当なし'}
+
+- NAVIGATE_TO リレーションのプロパティキー:
+  - ${navigateToPropKeys.length ? navigateToPropKeys.join(', ') : '該当なし'}
+
 - ノードラベル: ${labelList.length ? labelList.join(', ') : 'なし'}
 ${nodeCounts.join('\n')}
 

@@ -5,7 +5,7 @@ export function buildToolConfig(): ToolConfiguration {
     tools: [
       {
         toolSpec: {
-          name: 'browser_goto_by_id',
+          name: 'browser_goto',
           description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
           inputSchema: {
             json: {
@@ -42,19 +42,7 @@ export function buildToolConfig(): ToolConfiguration {
           },
         },
       },
-      {
-        toolSpec: {
-          name: 'browser_goto',
-          description: 'ブラウザで指定URLへ遷移します（実行後のテキストスナップショットを返却）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { url: { type: 'string' } },
-              required: ['url'],
-            },
-          },
-        },
-      },
+      
       {
         toolSpec: {
           name: 'browser_click',
