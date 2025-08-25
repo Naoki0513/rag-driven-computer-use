@@ -213,19 +213,28 @@ export async function converseLoop(
         }
       }
 
-      // 並列実行（DBクエリなどブラウザ非依存）
-      const parallelResults = await Promise.all(parallelTasks.map(async (t) => ({
-        index: t.index,
-        toolUseId: t.toolUseId,
-        text: await t.run(),
-      })));
+      // 並列実行（DBクエリなどブラウザ非依存）: 例外は文字列化して返す
+      const parallelResults = await Promise.all(parallelTasks.map(async (t) => {
+        try {
+          const text = await t.run();
+          return { index: t.index, toolUseId: t.toolUseId, text };
+        } catch (e: any) {
+          const err = `エラー: ${String(e?.message ?? e)}`;
+          return { index: t.index, toolUseId: t.toolUseId, text: err };
+        }
+      }));
 
       // ブラウザ操作は順次実行（順序保証・状態共有のため）
       const browserResults: Array<{ index: number; toolUseId: string; text: string }> = [];
       const orderedBrowserTasks = [...browserTasks].sort((a, b) => a.index - b.index);
       for (const t of orderedBrowserTasks) {
-        const text = await t.run();
-        browserResults.push({ index: t.index, toolUseId: t.toolUseId, text });
+        try {
+          const text = await t.run();
+          browserResults.push({ index: t.index, toolUseId: t.toolUseId, text });
+        } catch (e: any) {
+          const err = `エラー: ${String(e?.message ?? e)}`;
+          browserResults.push({ index: t.index, toolUseId: t.toolUseId, text: err });
+        }
       }
 
       // 元の順序にマージ
