@@ -13,6 +13,7 @@ import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
+import { browserFlow } from './tools/browser-flow.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
@@ -199,6 +200,14 @@ export async function converseLoop(
             console.log(`Calling tool: browser_press ${JSON.stringify({ ref, key })}`);
             const result = await browserPress(String(ref), String(key));
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_flow') {
+          const flowInput = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_flow ${JSON.stringify(flowInput).slice(0, 500)}${JSON.stringify(flowInput).length > 500 ? '...' : ''}`);
+            const result = await browserFlow(flowInput);
+            console.log(`Tool result (browser_flow): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         }

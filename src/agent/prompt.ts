@@ -25,8 +25,10 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
   - 検索結果から最適なページを選定し、id(p) を取得する。
   - 一度だけ実行する: browser_goto {"targetId": <選定したページの id>}
 
-5) 画面操作:
-  - 目的達成に必要な範囲でのみ以下を利用する（必要最小限、逐次実行）:
+5) 画面操作（遷移後のページ内）:
+  - 複数の操作が必要な場合は browser_flow を用いて steps に順番通り指定し、一括実行する。
+    - 例: browser_flow {"steps": [{"action":"input","ref":"e12","text":"2024/04"},{"action":"press","key":"Enter"}]}
+  - 単発の操作のみの場合は、以下を個別に利用する（必要最小限、逐次実行）:
     - browser_click: {"ref": "eXX"}
     - browser_input: {"ref": "eXX", "text": "<文字列>"}
     - browser_press: {"ref": "eXX", "key": "<Enter など>"}

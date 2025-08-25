@@ -46,7 +46,7 @@ MATCH (p:Page)
 WHERE all(k IN kws WHERE toLower(p.snapshot_for_ai) CONTAINS toLower(k))
 RETURN id(p) AS id, p.snapshot_for_ai AS snapshot_for_ai, p.depth AS depth, p.url AS url
 ORDER BY id ASC
-LIMIT 5`;
+LIMIT 3`;
     const res = await session.run(cypher, { keywords: list });
     const records = res.records.map((r) => r.toObject());
     if (!records.length) return '結果: 対象ページが見つかりませんでした';

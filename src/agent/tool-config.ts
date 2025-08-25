@@ -5,6 +5,36 @@ export function buildToolConfig(): ToolConfiguration {
     tools: [
       {
         toolSpec: {
+          name: 'browser_flow',
+          description: '現在のページ上で、クリック/入力/キー送信の複数操作(steps)を順次一括実行します（要素解決は ref→role+name→href のフォールバック、実行後スナップショット返却）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                steps: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      action: { type: 'string', enum: ['click', 'input', 'press'] },
+                      ref: { type: 'string' },
+                      role: { type: 'string' },
+                      name: { type: 'string' },
+                      href: { type: 'string' },
+                      text: { type: 'string' },
+                      key: { type: 'string' }
+                    },
+                    required: ['action']
+                  }
+                }
+              },
+              required: ['steps']
+            }
+          }
+        }
+      },
+      {
+        toolSpec: {
           name: 'browser_goto',
           description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
           inputSchema: {
@@ -32,7 +62,7 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'search_by_keywords',
-          description: 'keywords 配列に含まれる全キーワードを snapshot_for_ai に含む Page を検索します（id(p), snapshot_for_ai, depth, url を返す、最大5件）。',
+          description: 'keywords 配列に含まれる全キーワードを snapshot_for_ai に含む Page を検索します（id(p), snapshot_for_ai, depth, url を返す、最大3件）。',
           inputSchema: {
             json: {
               type: 'object',
@@ -55,7 +85,6 @@ export function buildToolConfig(): ToolConfiguration {
           },
         },
       },
-      
       {
         toolSpec: {
           name: 'browser_click',

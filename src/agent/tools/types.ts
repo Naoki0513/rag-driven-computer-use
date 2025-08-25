@@ -5,7 +5,22 @@ export type ToolUseInput =
   | { name: 'browser_click'; input: { ref: string }; toolUseId: string }
   | { name: 'browser_input'; input: { ref: string; text: string }; toolUseId: string }
   | { name: 'browser_press'; input: { ref: string; key: string }; toolUseId: string }
-  | { name: 'search_by_keywords'; input: { keywords: string[] }; toolUseId: string };
+  | { name: 'search_by_keywords'; input: { keywords: string[] }; toolUseId: string }
+  | {
+      name: 'browser_flow';
+      input: {
+        steps: Array<{
+          action: 'click' | 'input' | 'press';
+          ref?: string;
+          role?: string;
+          name?: string;
+          href?: string;
+          text?: string;
+          key?: string;
+        }>;
+      };
+      toolUseId: string;
+    };
 
 
 
