@@ -1,4 +1,5 @@
 import { ensureSharedBrowserStarted, takeSnapshots, resolveLocatorByRef } from './util.js';
+import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 
 type FlowStep = {
   action: 'click' | 'input' | 'press';
@@ -134,13 +135,14 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
       }
 
       const snaps = await takeSnapshots(page);
+      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       return JSON.stringify({
         success: true,
         action: 'browser_flow',
         selected: {},
         navigation: {},
         performed,
-        snapshots: { text: snaps.text, hash: snaps.hash },
+        snapshots: { text: snaps.text, id: snapshotId },
       });
   } catch (e: any) {
     return JSON.stringify({ success: false, error: String(e?.message ?? e) });

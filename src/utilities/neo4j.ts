@@ -28,6 +28,63 @@ export async function initDatabase(driver: Driver): Promise<void> {
   }
 }
 
+export async function findPageIdBySnapshotHash(hash: string): Promise<number | null> {
+  try {
+    const uri = process.env.AGENT_NEO4J_URI;
+    const user = process.env.AGENT_NEO4J_USER;
+    const password = process.env.AGENT_NEO4J_PASSWORD;
+    if (!uri || !user || !password) return null;
+
+    const driver = await createDriver(uri, user, password);
+    const session = driver.session();
+    try {
+      const res = await session.run(
+        'MATCH (n:Page { snapshot_hash: $hash }) RETURN id(n) AS id LIMIT 1',
+        { hash }
+      );
+      const rec = res.records?.[0];
+      if (!rec) return null;
+      const idVal = rec.get('id');
+      return typeof idVal === 'number' ? idVal : (Number(idVal) || null);
+    } finally {
+      await session.close();
+      await driver.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+export async function findPageIdByHashOrUrl(hash: string, url?: string): Promise<number | null> {
+  const byHash = await findPageIdBySnapshotHash(hash);
+  if (byHash !== null) return byHash;
+  if (!url) return null;
+  try {
+    const uri = process.env.AGENT_NEO4J_URI;
+    const user = process.env.AGENT_NEO4J_USER;
+    const password = process.env.AGENT_NEO4J_PASSWORD;
+    if (!uri || !user || !password) return null;
+
+    const driver = await createDriver(uri, user, password);
+    const session = driver.session();
+    try {
+      const res = await session.run(
+        'MATCH (n:Page { url: $url }) RETURN id(n) AS id ORDER BY n.timestamp DESC LIMIT 1',
+        { url }
+      );
+      const rec = res.records?.[0];
+      if (!rec) return null;
+      const idVal = rec.get('id');
+      return typeof idVal === 'number' ? idVal : (Number(idVal) || null);
+    } finally {
+      await session.close();
+      await driver.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
   const session = driver.session();
   try {

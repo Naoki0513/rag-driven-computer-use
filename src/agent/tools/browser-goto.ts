@@ -1,5 +1,6 @@
 import { ensureSharedBrowserStarted, takeSnapshots, resolveLocatorByRef } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
+import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
 
 type ClickStep = { ref?: string; role?: string; name?: string; href?: string };
@@ -98,7 +99,8 @@ LIMIT 1`;
       }
 
       const snaps = await takeSnapshots(page);
-      return JSON.stringify({ success: true, action: 'goto', targetId, navigateUrl, clickSteps, snapshots: { text: snaps.text, hash: snaps.hash } });
+      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
+      return JSON.stringify({ success: true, action: 'goto', targetId, navigateUrl, clickSteps, snapshots: { text: snaps.text, id: snapshotId } });
     } finally {
       await session.close();
     }

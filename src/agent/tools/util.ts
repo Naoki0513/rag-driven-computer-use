@@ -1,6 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import { getSnapshotForAI } from '../../utilities/snapshots.js';
-import { findRoleAndNameByRef, computeSha256Hex } from '../../utilities/text.js';
+import { captureNode, getSnapshotForAI } from '../../utilities/snapshots.js';
+import { findRoleAndNameByRef } from '../../utilities/text.js';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -39,21 +39,10 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
   }
 }
 
-export async function takeSnapshots(page: Page): Promise<{ text: string; hash: string }> {
-  // ページ遷移直後や動的描画直後にスナップショットが空になるのを防ぐため、待機とリトライを行う
-  const tryOnce = async (): Promise<string> => {
-    try {
-      return await getSnapshotForAI(page);
-    } catch (e: any) {
-      // 一度だけ強めの待機を入れて再試行
-      try { await page.waitForLoadState('networkidle', { timeout: 30000 }); } catch {}
-      try { await page.waitForTimeout(1500); } catch {}
-      return await getSnapshotForAI(page);
-    }
-  };
-  const text = await tryOnce();
-  const hash = computeSha256Hex(text);
-  return { text, hash };
+export async function takeSnapshots(page: Page): Promise<{ text: string; hash: string; url: string }> {
+  // クローラと同一の取得手順（networkidle 待機 + 追加待機）で撮影する
+  const node = await captureNode(page, { depth: 0 });
+  return { text: node.snapshotForAI, hash: node.snapshotHash, url: node.url };
 }
 
 export async function resolveLocatorByRef(page: Page, ref: string) {
