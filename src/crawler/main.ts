@@ -20,6 +20,7 @@ async function main() {
     neo4jPassword: env.CRAWLER_NEO4J_PASSWORD ?? 'testpassword',
 
     targetUrl: env.CRAWLER_TARGET_URL ?? 'http://the-agent-company.com:3000/',
+    loginUrl: env.CRAWLER_LOGIN_URL ?? undefined,
     loginUser: env.CRAWLER_LOGIN_USER ?? 'theagentcompany',
     loginPass: env.CRAWLER_LOGIN_PASS ?? 'theagentcompany',
 

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
-import { createDriver, initDatabase, saveNode, createRelation, closeDriver } from '../utilities/neo4j.js';
+import { createDriver, initDatabase, saveNode, createRelation, closeDriver, labelLoginPage } from '../utilities/neo4j.js';
 import type { NodeState, QueueItem, Interaction } from '../utilities/types.js';
 import { interactionsFromSnapshot, processInteraction } from './interactions.js';
 import { gatherWithBatches } from '../utilities/async.js';
@@ -44,8 +44,21 @@ export class WebCrawler {
     const page = await this.context.newPage();
     let visitedCount = 0;
     try {
-      await page.goto(this.config.targetUrl, { waitUntil: 'networkidle' });
+      const firstUrl = this.config.loginUrl || this.config.targetUrl;
+      await page.goto(firstUrl, { waitUntil: 'networkidle' });
       const preLoginNode = await this.captureAndStore(page, 1);
+      if (this.driver && this.config.loginUrl) {
+        await labelLoginPage(this.driver, { snapshotHash: preLoginNode.snapshotHash });
+      } else if (this.driver) {
+        // loginUrl が未指定でも、初回ページがログインページである可能性が高いのでラベル付与
+        // 要件: 最初に認証を行うページを LoginPage として保存
+        const isLoginLike = await page.evaluate<boolean>(
+          'Boolean(document.querySelector("input[type=\\"password\\"]") || document.querySelector("button[type=\\"submit\\"]"))'
+        ).catch(() => false);
+        if (isLoginLike) {
+          await labelLoginPage(this.driver, { snapshotHash: preLoginNode.snapshotHash });
+        }
+      }
       this.visitedHashes.add(preLoginNode.snapshotHash);
       visitedCount += 1;
 
@@ -95,7 +108,7 @@ export class WebCrawler {
           if (newNode) {
             const hash = newNode.snapshotHash;
             if (!this.visitedHashes.has(hash)) {
-              // 新しいノードの深度を設定し、保存前に反映
+              // 新規ノード
               newNode.depth = current.node.depth + 1;
               await this.storeNodeAndEdge(current.node, newNode, interaction);
               this.visitedHashes.add(hash);
@@ -103,8 +116,8 @@ export class WebCrawler {
               visitedCount += 1;
               this.noDiscoveryStreak = 0;
             } else {
-              // 既知ノード（重複スナップショット）の場合、リレーションは保存しない
-              // 要件: ノードが被ったら、そのリレーションシップはDBに格納しない
+              // 既知ノードでも、関係は常に保存（NAVIGATE_TO と CLICK_TO の共存を許容、各1本のみ）
+              await this.storeNodeAndEdge(current.node, newNode, interaction);
             }
           }
           return newNode;

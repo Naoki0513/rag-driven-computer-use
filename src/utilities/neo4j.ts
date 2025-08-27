@@ -109,6 +109,19 @@ export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
   }
 }
 
+export async function labelLoginPage(driver: Driver, node: Pick<NodeState, 'snapshotHash'>): Promise<void> {
+  const session = driver.session();
+  try {
+    await session.run(
+      `MATCH (n:Page {snapshot_hash: $snapshot_hash})
+       SET n:LoginPage`,
+      { snapshot_hash: node.snapshotHash },
+    );
+  } finally {
+    await session.close();
+  }
+}
+
 export async function createRelation(
   driver: Driver,
   fromNode: NodeState,
