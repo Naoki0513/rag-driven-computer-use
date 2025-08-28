@@ -2,6 +2,7 @@ import { ensureSharedBrowserStarted, takeSnapshots, resolveLocatorByRef } from '
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
+import { browserLogin } from './browser-login.js';
 
 type ClickStep = { ref?: string; role?: string; name?: string; href?: string };
 
@@ -59,6 +60,26 @@ LIMIT 1`;
 
       // NAVIGATE_TO のURLへ遷移
       await page.goto(navigateUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+      // 遷移直後に LoginPage ラベルのページであれば、自動ログインを一度だけ挿入
+      try {
+        const preSnaps = await takeSnapshots(page);
+        const currentId = await findPageIdByHashOrUrl(preSnaps.hash, preSnaps.url);
+        if (currentId !== null) {
+          const checkRes = await session.run(
+            'MATCH (n:Page) WHERE id(n) = $id RETURN n:LoginPage AS isLogin LIMIT 1',
+            { id: Number(currentId) },
+          );
+          const rec0 = checkRes.records?.[0];
+          const isLogin = !!(rec0 && (rec0.get('isLogin') === true || rec0.get('isLogin') === 1));
+          if (isLogin) {
+            try {
+              await browserLogin(preSnaps.url);
+              try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
+            } catch {}
+          }
+        }
+      } catch {}
 
       // 経路に沿ってクリック。ref/role+name/href の順で解決を試みる
       for (const step of clickSteps) {

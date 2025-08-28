@@ -108,7 +108,7 @@ export class WebCrawler {
           if (newNode) {
             const hash = newNode.snapshotHash;
             if (!this.visitedHashes.has(hash)) {
-              // 新規ノード
+              // 新しいノードの深度を設定し、保存前に反映
               newNode.depth = current.node.depth + 1;
               await this.storeNodeAndEdge(current.node, newNode, interaction);
               this.visitedHashes.add(hash);
@@ -116,8 +116,8 @@ export class WebCrawler {
               visitedCount += 1;
               this.noDiscoveryStreak = 0;
             } else {
-              // 既知ノードでも、関係は常に保存（NAVIGATE_TO と CLICK_TO の共存を許容、各1本のみ）
-              await this.storeNodeAndEdge(current.node, newNode, interaction);
+              // 既知ノード（重複スナップショット）の場合、リレーションは保存しない
+              // 要件: ノードが被ったら、そのリレーションシップはDBに格納しない
             }
           }
           return newNode;

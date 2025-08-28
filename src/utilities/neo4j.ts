@@ -142,20 +142,14 @@ export async function createRelation(
   const session = driver.session();
   try {
     if (actionType === 'navigate') {
-      // NAVIGATE_TO: 目的URLに直接遷移した状態変化
-      // - リレーションは (from)-[:NAVIGATE_TO]->(to) を1本のみ（MERGE）
-      // - プロパティ: action_type = 'navigate_to', url = 遷移先URL
-      // - 同一 from かつ同一 url の NAVIGATE_TO が既に存在する場合は作成しない
-      const existsRes = await session.run(
-        `MATCH (a:Page {snapshot_hash: $from_hash})-[r:NAVIGATE_TO {url: $url}]->()
+      // to ノードに既に NAVIGATE_TO が存在すれば新規作成しない（to 単位で高々1本）
+      const existsToRes = await session.run(
+        `MATCH ()-[r:NAVIGATE_TO]->(b:Page {snapshot_hash: $to_hash})
          RETURN count(r) AS cnt`,
-        {
-          from_hash: fromNode.snapshotHash,
-          url: href,
-        },
+        { to_hash: toNode.snapshotHash },
       );
-      const cnt = (existsRes.records?.[0]?.get?.('cnt')) ?? 0;
-      if (Number(cnt) > 0) {
+      const cntTo = (existsToRes.records?.[0]?.get?.('cnt')) ?? 0;
+      if (Number(cntTo) > 0) {
         return;
       }
       await session.run(
@@ -172,7 +166,16 @@ export async function createRelation(
         },
       );
     } else {
-      // 既存のクリックなどの関係
+      // to ノードに既に CLICK_TO が存在すれば新規作成しない（to 単位で高々1本）
+      const existsToRes = await session.run(
+        `MATCH ()-[r:CLICK_TO]->(b:Page {snapshot_hash: $to_hash})
+         RETURN count(r) AS cnt`,
+        { to_hash: toNode.snapshotHash },
+      );
+      const cntTo = (existsToRes.records?.[0]?.get?.('cnt')) ?? 0;
+      if (Number(cntTo) > 0) {
+        return;
+      }
       await session.run(
         `MATCH (a:Page {snapshot_hash: $from_hash})
          MATCH (b:Page {snapshot_hash: $to_hash})
