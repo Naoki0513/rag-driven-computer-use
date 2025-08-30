@@ -1,5 +1,7 @@
-import { ensureSharedBrowserStarted, takeSnapshots, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
+import { getSnapshotForAI } from '../../utilities/snapshots.js';
+import { findRoleAndNameByRef } from '../../utilities/text.js';
 
 type FlowStep = {
   action: 'click' | 'input' | 'press';
@@ -24,7 +26,18 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
   }
 
   try {
-      // 3) 画面操作ステップを順次実行（フォールバック: ref → role+name → href(clickのみ)）
+      // 0) フロー開始前のスナップショットを1回だけ取得し、全 ref を事前解決
+      const initialSnapshotText = await getSnapshotForAI(page);
+      const preResolvedByRef = new Map<string, { role: string; name?: string }>();
+      for (const s of steps) {
+        const ref = String(s?.ref ?? '').trim();
+        if (ref && !preResolvedByRef.has(ref)) {
+          const rn = findRoleAndNameByRef(initialSnapshotText, ref);
+          if (rn) preResolvedByRef.set(ref, rn);
+        }
+      }
+
+      // 1) 画面操作ステップを順次実行（フォールバック: preResolved(ref) → role+name → href(clickのみ)）
       const performed: Array<{ action: string; selector: any; ok: boolean; note?: string }> = [];
 
       for (const s of steps) {
@@ -43,9 +56,15 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
             let resolved = false;
             if (!resolved && ref) {
               try {
-                const { locator } = await resolveLocatorByRef(page, ref);
-                await locator.first().fill(text);
-                resolved = true;
+                const rn = preResolvedByRef.get(ref);
+                if (rn) {
+                  const loc = rn.name
+                    ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
+                    : page.getByRole(rn.role as any);
+                  await loc.first().waitFor({ state: 'visible', timeout: 30000 });
+                  await loc.first().fill(text);
+                  resolved = true;
+                }
               } catch {}
             }
             if (!resolved && role) {
@@ -63,9 +82,15 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
             let resolved = false;
             if (!resolved && ref) {
               try {
-                const { locator } = await resolveLocatorByRef(page, ref);
-                await locator.first().click();
-                resolved = true;
+                const rn = preResolvedByRef.get(ref);
+                if (rn) {
+                  const loc = rn.name
+                    ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
+                    : page.getByRole(rn.role as any);
+                  await loc.first().waitFor({ state: 'visible', timeout: 30000 });
+                  await loc.first().click();
+                  resolved = true;
+                }
               } catch {}
             }
             if (!resolved && role) {
@@ -95,9 +120,15 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
               let resolved = false;
               if (!resolved && ref) {
                 try {
-                  const { locator } = await resolveLocatorByRef(page, ref);
-                  await locator.first().press(key || 'Enter');
-                  resolved = true;
+                  const rn = preResolvedByRef.get(ref);
+                  if (rn) {
+                    const loc = rn.name
+                      ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
+                      : page.getByRole(rn.role as any);
+                    await loc.first().waitFor({ state: 'visible', timeout: 30000 });
+                    await loc.first().press(key || 'Enter');
+                    resolved = true;
+                  }
                 } catch {}
               }
               if (!resolved && role) {

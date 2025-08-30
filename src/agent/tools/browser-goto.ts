@@ -1,8 +1,9 @@
-import { ensureSharedBrowserStarted, takeSnapshots, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
 import { browserLogin } from './browser-login.js';
+// ref フォールバックは削除したため snapshots 直接取得は不要
 
 type ClickStep = { ref?: string; role?: string; name?: string; href?: string };
 
@@ -81,22 +82,14 @@ LIMIT 1`;
         }
       } catch {}
 
-      // 経路に沿ってクリック。ref/role+name/href の順で解決を試みる
+      // 経路に沿ってクリック。role+name/href を優先し、ref は原則使用しない（互換のため最後の最後に試行）
       for (const step of clickSteps) {
         const ref = String(step?.ref ?? '').trim();
         const role = String(step?.role ?? '').trim();
         const name = String(step?.name ?? '').trim();
         const href = String(step?.href ?? '').trim();
         let clicked = false;
-        // 1) ref 優先
-        if (!clicked && ref) {
-          try {
-            const { locator } = await resolveLocatorByRef(page, ref);
-            await locator.first().click();
-            clicked = true;
-          } catch {}
-        }
-        // 2) role+name
+        // 1) role+name
         if (!clicked && role && name) {
           try {
             const locator = page.getByRole(role as any, { name, exact: true } as any);
@@ -105,7 +98,7 @@ LIMIT 1`;
             clicked = true;
           } catch {}
         }
-        // 3) href
+        // 2) href
         if (!clicked && href) {
           try {
             const link = page.locator(`a[href='${href}']`).first();
@@ -114,6 +107,7 @@ LIMIT 1`;
             clicked = true;
           } catch {}
         }
+        // ref フォールバックは廃止
         if (clicked) {
           await page.waitForLoadState('domcontentloaded', { timeout: 45000 });
         }

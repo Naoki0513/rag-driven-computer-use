@@ -1,6 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import { captureNode, getSnapshotForAI } from '../../utilities/snapshots.js';
-import { findRoleAndNameByRef } from '../../utilities/text.js';
+import { captureNode } from '../../utilities/snapshots.js';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -45,17 +44,7 @@ export async function takeSnapshots(page: Page): Promise<{ text: string; hash: s
   return { text: node.snapshotForAI, hash: node.snapshotHash, url: node.url };
 }
 
-export async function resolveLocatorByRef(page: Page, ref: string) {
-  const snapText = await getSnapshotForAI(page);
-  const roleName = findRoleAndNameByRef(snapText, ref);
-  if (!roleName) throw new Error(`ref=${ref} に対応する要素が見つかりません (現在のスナップショット)`);
-  const { role, name } = roleName;
-  const locator = name && name.trim().length > 0
-    ? page.getByRole(role as any, { name, exact: true } as any)
-    : page.getByRole(role as any);
-  await locator.first().waitFor({ state: 'visible', timeout: 30000 });
-  return { locator, role, name } as const;
-}
+// resolveLocatorByRef は後方互換不要のため削除しました。
 
 
 
