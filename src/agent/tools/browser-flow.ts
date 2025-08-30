@@ -22,7 +22,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
 
   const steps: FlowStep[] = Array.isArray(input?.steps) ? input.steps : [];
   if (!Array.isArray(steps) || steps.length === 0) {
-    return JSON.stringify({ ok: 'エラー: steps が空です', action: 'browser_flow' });
+    return JSON.stringify({ action: 'browser_flow', performed: [], error: 'エラー: steps が空です' });
   }
 
   try {
@@ -38,7 +38,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
       }
 
       // 1) 画面操作ステップを順次実行（フォールバック: preResolved(ref) → role+name → href(clickのみ)）
-      const performed: Array<{ action: string; selector: any; ok: boolean; note?: string }> = [];
+      const performed: Array<{ action: string; selector: any; ok: boolean | string }> = [];
+      let shouldStop = false;
 
       for (const s of steps) {
         const action = String(s?.action ?? '').trim() as FlowStep['action'];
@@ -49,7 +50,12 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         const text = String(s?.text ?? '');
         const key = String(s?.key ?? '');
 
-        let ok = false;
+        if (shouldStop) {
+          performed.push({ action, selector: { ref, role, name, href }, ok: 'エラー: 前段の失敗によりスキップしました' });
+          continue;
+        }
+
+        let ok: boolean | string = false;
         let note: string | undefined = undefined;
         try {
           if (action === 'input') {
@@ -65,7 +71,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   await loc.first().fill(text);
                   resolved = true;
                 }
-              } catch {}
+              } catch (e: any) { note = formatToolError(e); }
             }
             if (!resolved && role) {
               try {
@@ -75,9 +81,9 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 await locator.first().waitFor({ state: 'visible', timeout: 30000 });
                 await locator.first().fill(text);
                 resolved = true;
-              } catch {}
+              } catch (e: any) { note = formatToolError(e); }
             }
-            ok = resolved;
+            ok = resolved ? true : (note || 'エラー: 入力に失敗しました');
           } else if (action === 'click') {
             let resolved = false;
             if (!resolved && ref) {
@@ -91,7 +97,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   await loc.first().click();
                   resolved = true;
                 }
-              } catch {}
+              } catch (e: any) { note = formatToolError(e); }
             }
             if (!resolved && role) {
               try {
@@ -101,7 +107,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 await locator.first().waitFor({ state: 'visible', timeout: 30000 });
                 await locator.first().click();
                 resolved = true;
-              } catch {}
+              } catch (e: any) { note = formatToolError(e); }
             }
             if (!resolved && href) {
               try {
@@ -109,10 +115,10 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 await link.waitFor({ state: 'visible', timeout: 15000 });
                 await link.click();
                 resolved = true;
-              } catch {}
+              } catch (e: any) { note = formatToolError(e); }
             }
-            ok = resolved;
-            if (ok) {
+            ok = resolved ? true : (note || 'エラー: クリックに失敗しました');
+            if (ok === true) {
               try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
             }
           } else if (action === 'press') {
@@ -129,7 +135,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                     await loc.first().press(key || 'Enter');
                     resolved = true;
                   }
-                } catch {}
+                } catch (e: any) { note = formatToolError(e); }
               }
               if (!resolved && role) {
                 try {
@@ -139,36 +145,36 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 await locator.first().waitFor({ state: 'visible', timeout: 30000 });
                 await locator.first().press(key || 'Enter');
                 resolved = true;
-                } catch {}
+                } catch (e: any) { note = formatToolError(e); }
               }
-              ok = resolved;
+              ok = resolved ? true : (note || 'エラー: キー送信に失敗しました');
             } else {
               // セレクタ指定なしの場合はグローバルに送る
-              await page.keyboard.press(key || 'Enter');
-              ok = true;
+              try {
+                await page.keyboard.press(key || 'Enter');
+                ok = true;
+              } catch (e: any) {
+                ok = formatToolError(e);
+              }
             }
-            if (ok) {
+            if (ok === true) {
               try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
             }
           } else {
-            note = `未知の action=${action}`;
+            ok = `エラー: 未知の action=${action}`;
           }
         } catch (e: any) {
-          note = String(e?.message ?? e);
+          ok = formatToolError(e);
         }
-        const entry: { action: string; selector: any; ok: boolean; note?: string } = {
-          action,
-          selector: { ref, role, name, href },
-          ok,
-        };
-        if (note !== undefined) entry.note = note;
-        performed.push(entry);
+        performed.push({ action, selector: { ref, role, name, href }, ok });
+        if (ok !== true) {
+          shouldStop = true;
+        }
       }
 
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       return JSON.stringify({
-        ok: true,
         action: 'browser_flow',
         selected: {},
         navigation: {},
@@ -176,7 +182,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         snapshots: { text: snaps.text, id: snapshotId },
       });
   } catch (e: any) {
-    return JSON.stringify({ ok: formatToolError(e), action: 'browser_flow' });
+    return JSON.stringify({ action: 'browser_flow', performed: [], error: formatToolError(e) });
   }
 }
 
