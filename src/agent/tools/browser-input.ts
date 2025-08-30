@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -17,11 +17,11 @@ export async function browserInput(ref: string, text: string): Promise<string> {
       await locator.first().fill(text);
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ success: true, action: 'input', ref, text, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify({ ok: true, action: 'input', ref, text, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text, id: snapshotId } });
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { success: false, action: 'input', ref, text, error: String(e?.message ?? e) };
+      const payload: any = { ok: formatToolError(e), action: 'input', ref, text };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
@@ -29,7 +29,7 @@ export async function browserInput(ref: string, text: string): Promise<string> {
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ success: false, action: 'input', ref, text, error: String(e?.message ?? e) });
+    return JSON.stringify({ ok: formatToolError(e), action: 'input', ref, text });
   }
 }
 

@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 
 export async function browserLogin(url: string): Promise<string> {
@@ -7,7 +7,7 @@ export async function browserLogin(url: string): Promise<string> {
     const username = String(process.env.AGENT_BROWSER_USERNAME ?? '').trim();
     const password = String(process.env.AGENT_BROWSER_PASSWORD ?? '').trim();
     if (!username || !password) {
-      return JSON.stringify({ success: false, action: 'login', url, error: 'AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD が未設定です' });
+      return JSON.stringify({ ok: 'エラー: AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD が未設定です', action: 'login', url });
     }
 
     try {
@@ -85,11 +85,11 @@ export async function browserLogin(url: string): Promise<string> {
       await page.waitForLoadState('networkidle');
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ success: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify({ ok: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { success: false, action: 'login', url, error: String(e?.message ?? e) };
+      const payload: any = { ok: formatToolError(e), action: 'login', url };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
@@ -97,7 +97,7 @@ export async function browserLogin(url: string): Promise<string> {
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ success: false, action: 'login', url, error: String(e?.message ?? e) });
+    return JSON.stringify({ ok: formatToolError(e), action: 'login', url });
   }
 }
 

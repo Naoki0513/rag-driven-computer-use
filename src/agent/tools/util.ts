@@ -44,6 +44,14 @@ export async function takeSnapshots(page: Page): Promise<{ text: string; hash: s
   return { text: node.snapshotForAI, hash: node.snapshotHash, url: node.url };
 }
 
+// エラーメッセージを一貫フォーマット（短く、先頭に識別可能な接頭辞）
+export function formatToolError(err: unknown, maxLen: number = 180): string {
+  const raw = typeof err === 'string' ? err : String((err as any)?.message ?? err);
+  const msg = raw.replace(/\s+/g, ' ').trim();
+  const head = msg.length > maxLen ? msg.slice(0, maxLen).trimEnd() + '…' : msg;
+  return `エラー: ${head}`;
+}
+
 // resolveLocatorByRef は後方互換不要のため削除しました。
 
 

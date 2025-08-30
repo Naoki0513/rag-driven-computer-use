@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
@@ -14,7 +14,7 @@ export async function browserGoto(targetId: number): Promise<string> {
   const user = process.env.AGENT_NEO4J_USER;
   const password = process.env.AGENT_NEO4J_PASSWORD;
   if (!uri || !user || !password) {
-    return JSON.stringify({ success: false, error: 'Neo4j接続情報が未設定です (AGENT_NEO4J_*)' });
+    return JSON.stringify({ ok: 'エラー: Neo4j接続情報が未設定です (AGENT_NEO4J_*)', action: 'goto' });
   }
 
   let driver: Driver | null = null;
@@ -53,7 +53,7 @@ LIMIT 1`;
       }
 
       if (!rec) {
-        return JSON.stringify({ success: false, error: `CLICK_TO 経路が見つかりませんでした targetId=${targetId}` });
+        return JSON.stringify({ ok: `エラー: CLICK_TO 経路が見つかりませんでした targetId=${targetId}`, action: 'goto', targetId });
       }
 
       const navigateUrl: string = rec.get('navigateUrl');
@@ -115,12 +115,12 @@ LIMIT 1`;
 
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ success: true, action: 'goto', targetId, navigateUrl, clickSteps, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify({ ok: true, action: 'goto', targetId, navigateUrl, clickSteps, snapshots: { text: snaps.text, id: snapshotId } });
     } finally {
       await session.close();
     }
   } catch (e: any) {
-    return JSON.stringify({ success: false, error: String(e?.message ?? e) });
+    return JSON.stringify({ ok: formatToolError(e), action: 'goto', targetId });
   } finally {
     await closeDriver(driver);
   }

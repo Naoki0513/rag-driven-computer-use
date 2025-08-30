@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -22,7 +22,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
 
   const steps: FlowStep[] = Array.isArray(input?.steps) ? input.steps : [];
   if (!Array.isArray(steps) || steps.length === 0) {
-    return JSON.stringify({ success: false, error: 'steps が空です' });
+    return JSON.stringify({ ok: 'エラー: steps が空です', action: 'browser_flow' });
   }
 
   try {
@@ -168,7 +168,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       return JSON.stringify({
-        success: true,
+        ok: true,
         action: 'browser_flow',
         selected: {},
         navigation: {},
@@ -176,7 +176,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         snapshots: { text: snaps.text, id: snapshotId },
       });
   } catch (e: any) {
-    return JSON.stringify({ success: false, error: String(e?.message ?? e) });
+    return JSON.stringify({ ok: formatToolError(e), action: 'browser_flow' });
   }
 }
 
