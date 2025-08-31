@@ -5,8 +5,8 @@ REM Example: cypher-shell.bat "RETURN 1 AS test"
 
 if "%~1"=="" (
     REM Interactive mode - start cypher-shell in interactive mode
-    docker exec -it neo4j-crawler cypher-shell -u neo4j -p testpassword
+    docker exec -it neo4j cypher-shell -u neo4j -p testpass
 ) else (
     REM Non-interactive mode - execute the provided query
-    docker exec neo4j-crawler cypher-shell -u neo4j -p testpassword %*
+    docker exec neo4j cypher-shell -u neo4j -p testpass %*
 ) 

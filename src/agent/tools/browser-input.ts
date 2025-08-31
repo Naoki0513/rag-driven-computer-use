@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef, trySelectListboxOption } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -20,12 +20,14 @@ export async function browserInput(ref: string, text: string): Promise<string> {
         const fallback = locator.first();
         await fallback.waitFor({ state: 'visible', timeout: t });
         await fallback.fill(text);
+        try { await trySelectListboxOption(page, fallback, text); } catch {}
         const snaps0 = await takeSnapshots(page);
         const snapshotId0 = await findPageIdByHashOrUrl(snaps0.hash, snaps0.url);
         return JSON.stringify({ ok: true, action: 'input', ref, text, snapshots: { text: snaps0.text, id: snapshotId0 } });
       }
       await loc.waitFor({ state: 'visible', timeout: t });
       await loc.fill(text);
+      try { await trySelectListboxOption(page, loc, text); } catch {}
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       return JSON.stringify({ ok: true, action: 'input', ref, text, snapshots: { text: snaps.text, id: snapshotId } });
