@@ -1,7 +1,8 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
+import { getTimeoutMs } from '../../utilities/timeout.js';
 
 type FlowStep = {
   action: 'click' | 'input' | 'press';
@@ -19,6 +20,7 @@ type BrowserFlowInput = {
 
 export async function browserFlow(input: BrowserFlowInput): Promise<string> {
   const { page } = await ensureSharedBrowserStarted();
+  const t = getTimeoutMs('agent');
 
   const steps: FlowStep[] = Array.isArray(input?.steps) ? input.steps : [];
   if (!Array.isArray(steps) || steps.length === 0) {
@@ -67,7 +69,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   const loc = rn.name
                     ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
                     : page.getByRole(rn.role as any);
-                  await loc.first().waitFor({ state: 'visible', timeout: 30000 });
+                  await loc.first().waitFor({ state: 'visible', timeout: t });
                   await loc.first().fill(text);
                   resolved = true;
                 }
@@ -78,7 +80,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 const locator = name
                   ? page.getByRole(role as any, { name, exact: true } as any)
                   : page.getByRole(role as any);
-                await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+                await locator.first().waitFor({ state: 'visible', timeout: t });
                 await locator.first().fill(text);
                 resolved = true;
               } catch (e: any) { note = formatToolError(e); }
@@ -93,8 +95,10 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   const loc = rn.name
                     ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
                     : page.getByRole(rn.role as any);
-                  await loc.first().waitFor({ state: 'visible', timeout: 30000 });
-                  await loc.first().click();
+                  const el = loc.first();
+                  await el.waitFor({ state: 'visible', timeout: t });
+                  const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
+                  await clickWithFallback(page, el, isCheckbox);
                   resolved = true;
                 }
               } catch (e: any) { note = formatToolError(e); }
@@ -104,22 +108,24 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 const locator = name
                   ? page.getByRole(role as any, { name, exact: true } as any)
                   : page.getByRole(role as any);
-                await locator.first().waitFor({ state: 'visible', timeout: 30000 });
-                await locator.first().click();
+                const el = locator.first();
+                await el.waitFor({ state: 'visible', timeout: t });
+                const isCheckbox = String(role || '').toLowerCase() === 'checkbox';
+                await clickWithFallback(page, el, isCheckbox);
                 resolved = true;
               } catch (e: any) { note = formatToolError(e); }
             }
             if (!resolved && href) {
               try {
                 const link = page.locator(`a[href='${href}']`).first();
-                await link.waitFor({ state: 'visible', timeout: 15000 });
+                await link.waitFor({ state: 'visible', timeout: t });
                 await link.click();
                 resolved = true;
               } catch (e: any) { note = formatToolError(e); }
             }
             ok = resolved ? true : (note || 'エラー: クリックに失敗しました');
             if (ok === true) {
-              try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
+              try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
             }
           } else if (action === 'press') {
             if (ref || role) {
@@ -131,7 +137,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                     const loc = rn.name
                       ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
                       : page.getByRole(rn.role as any);
-                    await loc.first().waitFor({ state: 'visible', timeout: 30000 });
+                    await loc.first().waitFor({ state: 'visible', timeout: t });
                     await loc.first().press(key || 'Enter');
                     resolved = true;
                   }
@@ -142,7 +148,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   const locator = name
                     ? page.getByRole(role as any, { name, exact: true } as any)
                     : page.getByRole(role as any);
-                await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+                await locator.first().waitFor({ state: 'visible', timeout: t });
                 await locator.first().press(key || 'Enter');
                 resolved = true;
                 } catch (e: any) { note = formatToolError(e); }
@@ -158,7 +164,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
               }
             }
             if (ok === true) {
-              try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
+              try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
             }
           } else {
             ok = `エラー: 未知の action=${action}`;

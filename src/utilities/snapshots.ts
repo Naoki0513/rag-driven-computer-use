@@ -2,10 +2,12 @@ import type { Page } from 'playwright';
 import type { NodeState } from './types.js';
 import { normalizeUrl } from './url.js';
 import { computeSha256Hex } from './text.js';
+import { getTimeoutMs } from './timeout.js';
 
 export async function captureNode(page: Page, options: { depth: number }): Promise<NodeState> {
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(3000);
+  const t = getTimeoutMs();
+  await page.waitForLoadState('networkidle', { timeout: t });
+  await page.waitForTimeout(Math.min(3000, t));
 
   const rawUrl = page.url();
   const normalizedUrl = normalizeUrl(rawUrl);

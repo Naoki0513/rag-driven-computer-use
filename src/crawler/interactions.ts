@@ -1,6 +1,7 @@
 import type { Interaction, NodeState } from '../utilities/types.js';
 import { isInternalLink, normalizeUrl } from '../utilities/url.js';
 import type { BrowserContext, Page } from 'playwright';
+import { getTimeoutMs } from '../utilities/timeout.js';
 
 function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null {
   if (!name) return null;
@@ -10,7 +11,7 @@ function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null 
 }
 
 async function waitForAppReady(page: Page): Promise<void> {
-  await page.waitForLoadState('networkidle', { timeout: 10000 as any });
+  await page.waitForLoadState('networkidle', { timeout: getTimeoutMs('crawler') as any });
 }
 
 async function capture(page: Page): Promise<NodeState> {
@@ -75,6 +76,8 @@ export async function processInteraction(
   let newPage: Page | null = null;
   try {
     newPage = await context.newPage();
+    try { newPage.setDefaultTimeout(getTimeoutMs('crawler')); } catch {}
+    try { newPage.setDefaultNavigationTimeout(getTimeoutMs('crawler')); } catch {}
   } catch {
     return null;
   }
@@ -85,7 +88,7 @@ export async function processInteraction(
     const debugId = `${interaction.role ?? 'unknown-role'}::${interaction.name ?? 'unnamed'}::${interaction.ref ?? interaction.refId ?? 'no-ref'}`;
     const fromUrl = fromNode.url;
     console.info(`[processInteraction] start for ${debugId} at ${fromUrl}`);
-    await newPage.goto(fromUrl, { waitUntil: 'domcontentloaded' });
+    await newPage.goto(fromUrl, { waitUntil: 'domcontentloaded', timeout: getTimeoutMs('crawler') });
     await waitForAppReady(newPage);
 
     const ref = interaction.ref ?? interaction.refId ?? null;
@@ -105,7 +108,7 @@ export async function processInteraction(
             console.info(`[processInteraction] primary href navigation -> ${targetUrl}`);
             interaction.href = targetUrl;
             interaction.actionType = 'navigate';
-            await newPage.goto(targetUrl, { waitUntil: 'networkidle' });
+            await newPage.goto(targetUrl, { waitUntil: 'networkidle', timeout: getTimeoutMs('crawler') });
             const newNode = await capture(newPage);
             // 既知スナップショットでも上位でリレーション作成できるように常に返す
             return newNode;
@@ -135,7 +138,7 @@ export async function processInteraction(
     config.triedActions.add(clickKey);
 
     const locator = newPage.getByRole(resolved.role as any, options as any);
-    await locator.first().waitFor({ state: 'visible', timeout: 15000 });
+    await locator.first().waitFor({ state: 'visible', timeout: getTimeoutMs('crawler') });
 
     await locator.first().click();
     await waitForAppReady(newPage).catch(() => {});

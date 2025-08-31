@@ -1,14 +1,16 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
 import { browserLogin } from './browser-login.js';
+import { getTimeoutMs } from '../../utilities/timeout.js';
 // ref フォールバックは削除したため snapshots 直接取得は不要
 
 type ClickStep = { ref?: string; role?: string; name?: string; href?: string };
 
 export async function browserGoto(targetId: number): Promise<string> {
   const { page } = await ensureSharedBrowserStarted();
+  const t = getTimeoutMs('agent');
 
   const uri = process.env.AGENT_NEO4J_URI;
   const user = process.env.AGENT_NEO4J_USER;
@@ -63,7 +65,7 @@ LIMIT 1`;
 
       // NAVIGATE_TO のURLへ遷移
       try {
-        await page.goto(navigateUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.goto(navigateUrl, { waitUntil: 'domcontentloaded', timeout: t });
         performed.push({ stage: 'navigate', ok: true });
       } catch (e: any) {
         const note = formatToolError(e);
@@ -91,7 +93,7 @@ LIMIT 1`;
           if (isLogin) {
             try {
               await browserLogin(preSnaps.url);
-              try { await page.waitForLoadState('domcontentloaded', { timeout: 45000 }); } catch {}
+              try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
             } catch {}
           }
         }
@@ -113,8 +115,10 @@ LIMIT 1`;
         if (!clicked && role && name) {
           try {
             const locator = page.getByRole(role as any, { name, exact: true } as any);
-            await locator.first().waitFor({ state: 'visible', timeout: 15000 });
-            await locator.first().click();
+            const el = locator.first();
+            await el.waitFor({ state: 'visible', timeout: t });
+            const isCheckbox = String(role || '').toLowerCase() === 'checkbox';
+            await clickWithFallback(page, el, isCheckbox);
             clicked = true;
           } catch (e: any) { attemptErrors.push(String(e?.message ?? e)); }
         }
@@ -122,14 +126,14 @@ LIMIT 1`;
         if (!clicked && href) {
           try {
             const link = page.locator(`a[href='${href}']`).first();
-            await link.waitFor({ state: 'visible', timeout: 15000 });
+            await link.waitFor({ state: 'visible', timeout: t });
             await link.click();
             clicked = true;
           } catch (e: any) { attemptErrors.push(String(e?.message ?? e)); }
         }
         // ref フォールバックは廃止
         if (clicked) {
-          await page.waitForLoadState('domcontentloaded', { timeout: 45000 });
+          await page.waitForLoadState('domcontentloaded', { timeout: t });
           performed.push({ stage: 'click', selector: { role, name, href, ref }, ok: true });
         } else {
           const note = formatToolError(attemptErrors.join(' | '));

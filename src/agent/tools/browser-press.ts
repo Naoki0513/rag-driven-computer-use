@@ -2,18 +2,20 @@ import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './ut
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
+import { getTimeoutMs } from '../../utilities/timeout.js';
 
 export async function browserPress(ref: string, key: string): Promise<string> {
   try {
     const { page } = await ensureSharedBrowserStarted();
     try {
+      const t = getTimeoutMs('agent');
       const snapText = await getSnapshotForAI(page);
       const rn = findRoleAndNameByRef(snapText, ref);
       if (!rn) throw new Error(`ref=${ref} に対応する要素が見つかりません (指定スナップショット)`);
       const locator = rn.name
         ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
         : page.getByRole(rn.role as any);
-      await locator.first().waitFor({ state: 'visible', timeout: 30000 });
+      await locator.first().waitFor({ state: 'visible', timeout: t });
       await locator.first().press(key);
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);

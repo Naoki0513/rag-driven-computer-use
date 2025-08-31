@@ -5,6 +5,7 @@ import type { NodeState, QueueItem, Interaction } from '../utilities/types.js';
 import { interactionsFromSnapshot, processInteraction } from './interactions.js';
 import { gatherWithBatches } from '../utilities/async.js';
 import { normalizeUrl } from '../utilities/url.js';
+import { getTimeoutMs } from '../utilities/timeout.js';
 
 export class WebCrawler {
   private config: any;
@@ -31,21 +32,26 @@ export class WebCrawler {
 
     this.browser = await chromium.launch({ headless: !this.config.headful });
     this.context = await this.browser.newContext();
+    const t = getTimeoutMs('crawler');
+    try { (this.context as any).setDefaultTimeout?.(t); } catch {}
+    try { (this.context as any).setDefaultNavigationTimeout?.(t); } catch {}
   }
 
   async cleanup(): Promise<void> {
-    await this.context?.close();
-    await this.browser?.close();
-    await closeDriver(this.driver);
+    try { await this.context?.close(); } catch {}
+    try { await this.browser?.close(); } catch {}
+    try { await closeDriver(this.driver); } catch {}
   }
 
   async run(): Promise<void> {
     if (!this.context) throw new Error('Context not initialized');
     const page = await this.context.newPage();
+    try { page.setDefaultTimeout(getTimeoutMs('crawler')); } catch {}
+    try { page.setDefaultNavigationTimeout(getTimeoutMs('crawler')); } catch {}
     let visitedCount = 0;
     try {
       const firstUrl = this.config.loginUrl || this.config.targetUrl;
-      await page.goto(firstUrl, { waitUntil: 'networkidle' });
+      await page.goto(firstUrl, { waitUntil: 'networkidle', timeout: getTimeoutMs('crawler') });
       const preLoginNode = await this.captureAndStore(page, 1);
       if (this.driver && this.config.loginUrl) {
         await labelLoginPage(this.driver, { snapshotHash: preLoginNode.snapshotHash });
@@ -93,8 +99,8 @@ export class WebCrawler {
         // Ensure main page is open
         if (page.isClosed()) throw new Error('Main page closed');
         const currentUrl = current.node.url;
-        await page.goto(currentUrl, { waitUntil: 'networkidle' });
-        await page.waitForTimeout(5000);
+        await page.goto(currentUrl, { waitUntil: 'networkidle', timeout: getTimeoutMs('crawler') });
+        await page.waitForTimeout(Math.min(5000, getTimeoutMs('crawler')));
 
         const interactions = await interactionsFromSnapshot(current.node.snapshotForAI);
         // 1ページあたり全要素を対象にする（並列度は parallelTasks で制御）
@@ -158,9 +164,10 @@ export class WebCrawler {
   }
 
   private async login(page: Page): Promise<void> {
-    await page.goto(this.config.targetUrl, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForTimeout(5000);
+    const t = getTimeoutMs('crawler');
+    await page.goto(this.config.targetUrl, { waitUntil: 'load', timeout: t }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: t }).catch(() => {});
+    await page.waitForTimeout(Math.min(5000, t));
 
     const isAlreadyLoggedIn = await page.evaluate<boolean>(
       'Boolean(document.querySelector(".sidebar") || document.querySelector(".main-content") || document.querySelector(".rc-room"))',
@@ -173,8 +180,8 @@ export class WebCrawler {
     const currentUrl = page.url();
     if (currentUrl.includes('/home')) {
       const baseUrl = this.config.targetUrl.replace(/\/home\/?$/, '');
-      await page.goto(baseUrl, { waitUntil: 'networkidle' }).catch(() => {});
-      await page.waitForTimeout(2000);
+      await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: t }).catch(() => {});
+      await page.waitForTimeout(Math.min(2000, t));
     }
 
     const loginInput = await page.$('input[name="emailOrUsername"], input[name="username"], input[name="email"], input[type="email"], input[type="text"][placeholder*="user" i]');
@@ -184,8 +191,8 @@ export class WebCrawler {
     if (loginInput && passwordInput && submitButton) {
       await loginInput.fill(this.config.loginUser);
       await passwordInput.fill(this.config.loginPass);
-      await submitButton.click();
-      await page.waitForTimeout(5000);
+      await submitButton.click({ timeout: t });
+      await page.waitForTimeout(Math.min(5000, t));
       const isLoggedIn = await page.evaluate<boolean>(
         'Boolean(document.querySelector(".sidebar") || document.querySelector(".main-content") || document.querySelector(".rc-room"))',
       );

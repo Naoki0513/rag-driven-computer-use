@@ -1,5 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { Locator } from 'playwright';
 import { captureNode } from '../../utilities/snapshots.js';
+import { getTimeoutMs } from '../../utilities/timeout.js';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -13,7 +15,12 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
   sharedBrowser = await chromium.launch({ headless: !headful });
   sharedContext = await sharedBrowser.newContext();
+  const t = getTimeoutMs('agent');
+  try { (sharedContext as any).setDefaultTimeout?.(t); } catch {}
+  try { (sharedContext as any).setDefaultNavigationTimeout?.(t); } catch {}
   sharedPage = await sharedContext.newPage();
+  try { sharedPage.setDefaultTimeout(t); } catch {}
+  try { sharedPage.setDefaultNavigationTimeout(t); } catch {}
   console.log('[OK] 共有 Playwright ブラウザを起動しました');
   return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
 }
@@ -53,6 +60,69 @@ export function formatToolError(err: unknown, maxLen: number = 180): string {
 }
 
 // resolveLocatorByRef は後方互換不要のため削除しました。
+
+// クリック専用の堅牢フォールバック（スクロール→関連label→force）
+export async function clickWithFallback(
+  page: Page,
+  locator: Locator,
+  isCheckbox: boolean,
+  attemptTimeoutMs?: number,
+): Promise<void> {
+  const envTimeout = getTimeoutMs('agent');
+  const t = Number.isFinite(Number(attemptTimeoutMs)) && Number(attemptTimeoutMs) > 0
+    ? Math.trunc(Number(attemptTimeoutMs))
+    : envTimeout;
+  // checkbox は label クリックを最優先に試す（長い待ちを避ける）
+  if (isCheckbox) {
+    try {
+      const id = await locator.getAttribute('id');
+      if (id) {
+        const labelByFor = page.locator(`label[for="${id}"]`).first();
+        if (await labelByFor.count()) {
+          await labelByFor.scrollIntoViewIfNeeded();
+          await labelByFor.click({ timeout: t });
+          return;
+        }
+      }
+      const ancestorLabel = locator.locator('xpath=ancestor::label').first();
+      if (await ancestorLabel.count()) {
+        await ancestorLabel.scrollIntoViewIfNeeded();
+        await ancestorLabel.click({ timeout: t });
+        return;
+      }
+    } catch {}
+  }
+
+  // 1) 通常クリック（短いタイムアウト）
+  try { await locator.click({ timeout: t }); return; } catch {}
+
+  // 2) スクロールして再試行（短いタイムアウト）
+  try { await locator.scrollIntoViewIfNeeded(); await locator.click({ timeout: t }); return; } catch {}
+
+  // 3) checkbox なら最後にもう一度 label 経由を試す
+  if (isCheckbox) {
+    try {
+      const id = await locator.getAttribute('id');
+      if (id) {
+        const labelByFor = page.locator(`label[for="${id}"]`).first();
+        if (await labelByFor.count()) {
+          await labelByFor.scrollIntoViewIfNeeded();
+          await labelByFor.click({ timeout: t });
+          return;
+        }
+      }
+      const ancestorLabel = locator.locator('xpath=ancestor::label').first();
+      if (await ancestorLabel.count()) {
+        await ancestorLabel.scrollIntoViewIfNeeded();
+        await ancestorLabel.click({ timeout: t });
+        return;
+      }
+    } catch {}
+  }
+
+  // 4) 最終手段: force クリック（無条件に実行）
+  await locator.click({ force: true });
+}
 
 
 

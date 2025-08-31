@@ -1,9 +1,11 @@
 import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
+import { getTimeoutMs } from '../../utilities/timeout.js';
 
 export async function browserLogin(url: string): Promise<string> {
   try {
     const { page } = await ensureSharedBrowserStarted();
+    const t = getTimeoutMs('agent');
     const username = String(process.env.AGENT_BROWSER_USERNAME ?? '').trim();
     const password = String(process.env.AGENT_BROWSER_PASSWORD ?? '').trim();
     if (!username || !password) {
@@ -12,8 +14,8 @@ export async function browserLogin(url: string): Promise<string> {
 
     try {
       if (url && url.trim().length > 0) {
-        await page.goto(url);
-        await page.waitForLoadState('networkidle');
+        await page.goto(url, { timeout: t });
+        await page.waitForLoadState('networkidle', { timeout: t });
       }
 
       const userSelectors = [
@@ -73,7 +75,7 @@ export async function browserLogin(url: string): Promise<string> {
       for (const sel of submitSelectors) {
         const el = await page.$(sel);
         if (el) {
-          await el.click();
+          await el.click({ timeout: t });
           clicked = true;
           break;
         }
@@ -82,7 +84,7 @@ export async function browserLogin(url: string): Promise<string> {
         await pwEl.press('Enter');
       }
 
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('networkidle', { timeout: t });
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       return JSON.stringify({ ok: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
