@@ -1,7 +1,8 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Locator } from 'playwright';
-import { captureNode } from '../../utilities/snapshots.js';
+import { captureNode, getSnapshotForAI } from '../../utilities/snapshots.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
+import { findRoleAndNameByRef } from '../../utilities/text.js';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -122,6 +123,141 @@ export async function clickWithFallback(
 
   // 4) 最終手段: force クリック（無条件に実行）
   await locator.click({ force: true });
+}
+
+// ref → DOM ロケーター解決（データ属性/索引がなくてもスナップショットの序数と祖先ロールを用いた多段フォールバック）
+export async function resolveLocatorByRef(
+  page: Page,
+  ref: string,
+): Promise<Locator | null> {
+  const t = getTimeoutMs('agent');
+
+  // 0) data 属性が既に付与されていれば最優先
+  try {
+    const byAttr = page.locator(`[data-wg-ref="${ref}"]`).first();
+    if ((await byAttr.count()) > 0) return byAttr;
+  } catch {}
+
+  // 1) ページ内のサイドカー索引（任意実装）
+  try {
+    const idx = await page.evaluate((r: string) => (window as any).__WG_REF_INDEX__?.[r], ref).catch(() => null as any);
+    if (idx?.css) {
+      const byCss = page.locator(idx.css).first();
+      if ((await byCss.count()) > 0) {
+        try { await byCss.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+        return byCss;
+      }
+    }
+    if (idx?.xpath) {
+      const byXpath = page.locator(`xpath=${idx.xpath}`).first();
+      if ((await byXpath.count()) > 0) {
+        try { await byXpath.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+        return byXpath;
+      }
+    }
+    if (idx?.role && Number.isFinite(idx.roleIndex)) {
+      const loc = page.getByRole(idx.role as any);
+      const nth = loc.nth(Math.max(0, Math.trunc(idx.roleIndex)));
+      if ((await nth.count()) > 0) {
+        try { await nth.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+        return nth;
+      }
+    }
+  } catch {}
+
+  // 2) スナップショットを用いた序数ベースの推定（祖先ロールも考慮）
+  let snapText: string | null = null;
+  try { snapText = await getSnapshotForAI(page); } catch {}
+  if (!snapText) {
+    // role/name が分かれば最終フォールバック
+    try {
+      const rn = findRoleAndNameByRef('', ref);
+      if (rn?.role) {
+        const loc = rn.name
+          ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
+          : page.getByRole(rn.role as any);
+        return loc.first();
+      }
+    } catch {}
+    return null;
+  }
+
+  // パース: 行単位にして ref を含む行を特定
+  const lines = snapText.split(/\r?\n/);
+  const refToken = `[ref=${ref}]`;
+  let targetIdx = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i]!.includes(refToken)) { targetIdx = i; break; }
+  }
+  if (targetIdx === -1) return null;
+
+  // 役割抽出（同ファイルの findRoleAndNameByRef を流用）
+  const rn = findRoleAndNameByRef(snapText, ref);
+  const role = rn?.role || '';
+  const name = rn?.name || '';
+
+  // 祖先のロール候補を収集（近い順に最大5件）
+  const ancestorRoles: string[] = [];
+  for (let j = targetIdx - 1; j >= 0 && ancestorRoles.length < 5; j -= 1) {
+    const m = /-\s*([a-zA-Z]+)(?:\s+"[^"]+")?.*\[ref=/.exec(lines[j]!);
+    if (m) {
+      const r = m[1]!.toLowerCase();
+      if (!['generic', 'text', 'separator', 'figure', 'img'].includes(r)) ancestorRoles.push(r);
+    }
+  }
+
+  // 同ロールの序数（スナップショット内での出現順）を求める
+  function computeRoleIndex(targetLineIndex: number, roleName: string): number {
+    let count = 0;
+    const roleRegex = new RegExp(`-\\s*${roleName}(\\s|\\[|\\")`, 'i');
+    for (let i = 0; i <= targetLineIndex; i += 1) {
+      if (roleRegex.test(lines[i]!)) count += 1;
+    }
+    return Math.max(0, count - 1);
+  }
+
+  // 祖先ロールの nth を順に試しながらスコープを狭める
+  let scope: Locator | null = null;
+  try {
+    for (const aRole of ancestorRoles) {
+      const aIdx = computeRoleIndex(targetIdx, aRole);
+      const aLoc = page.getByRole(aRole as any).nth(aIdx);
+      const exists = (await aLoc.count()) > 0;
+      if (exists) { scope = aLoc; break; }
+    }
+  } catch {}
+
+  // 最終ロケーター（スコープがあれば内部で、なければページ全体で）
+  try {
+    if (role) {
+      const base = scope ?? page;
+      let loc = name
+        ? base.getByRole(role as any, { name, exact: true } as any)
+        : base.getByRole(role as any);
+
+      // スナップショット序数で nth 指定
+      const idx = computeRoleIndex(targetIdx, role);
+      loc = loc.nth(idx);
+      const exists = (await loc.count()) > 0;
+      if (exists) {
+        try { await loc.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+        return loc;
+      }
+    }
+  } catch {}
+
+  // 役割が取れない場合の緩いフォールバック: 祖先スコープがあれば最初の入力要素
+  try {
+    if (scope) {
+      const anyTextbox = scope.getByRole('textbox' as any).first();
+      if ((await anyTextbox.count()) > 0) {
+        try { await anyTextbox.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+        return anyTextbox;
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 

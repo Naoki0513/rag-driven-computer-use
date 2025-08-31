@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -9,17 +9,24 @@ export async function browserPress(ref: string, key: string): Promise<string> {
     const { page } = await ensureSharedBrowserStarted();
     try {
       const t = getTimeoutMs('agent');
-      const snapText = await getSnapshotForAI(page);
-      const rn = findRoleAndNameByRef(snapText, ref);
-      if (!rn) throw new Error(`ref=${ref} に対応する要素が見つかりません (指定スナップショット)`);
-      const locator = rn.name
-        ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
-        : page.getByRole(rn.role as any);
-      await locator.first().waitFor({ state: 'visible', timeout: t });
-      await locator.first().press(key);
+      const loc = await resolveLocatorByRef(page, ref);
+      if (!loc) {
+        const snapText = await getSnapshotForAI(page);
+        const rn = findRoleAndNameByRef(snapText, ref);
+        if (!rn) throw new Error(`ref=${ref} に対応する要素が見つかりません (指定スナップショット)`);
+        const locator = rn.name
+          ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
+          : page.getByRole(rn.role as any);
+        const fallback = locator.first();
+        await fallback.waitFor({ state: 'visible', timeout: t });
+        await fallback.press(key);
+      } else {
+        await loc.waitFor({ state: 'visible', timeout: t });
+        await loc.press(key);
+      }
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ ok: true, action: 'press', ref, key, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify({ ok: true, action: 'press', ref, key, snapshots: { text: snaps.text, id: snapshotId } });
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}

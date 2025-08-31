@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -39,7 +39,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         }
       }
 
-      // 1) 画面操作ステップを順次実行（フォールバック: preResolved(ref) → role+name → href(clickのみ)）
+      // 1) 画面操作ステップを順次実行（フォールバック: ref 直接解決 → preResolved(ref) → role+name → href(clickのみ)）
       const performed: Array<{ action: string; selector: any; ok: boolean | string }> = [];
       let shouldStop = false;
 
@@ -62,6 +62,17 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         try {
           if (action === 'input') {
             let resolved = false;
+            // 1) ref 直接解決（data-wg-ref / 索引 / 序数）
+            if (!resolved && ref) {
+              try {
+                const byRef = await resolveLocatorByRef(page, ref);
+                if (byRef) {
+                  await byRef.waitFor({ state: 'visible', timeout: t });
+                  await byRef.fill(text);
+                  resolved = true;
+                }
+              } catch (e: any) { note = formatToolError(e); }
+            }
             if (!resolved && ref) {
               try {
                 const rn = preResolvedByRef.get(ref);
@@ -88,6 +99,21 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
             ok = resolved ? true : (note || 'エラー: 入力に失敗しました');
           } else if (action === 'click') {
             let resolved = false;
+            // 1) ref 直接解決
+            if (!resolved && ref) {
+              try {
+                const byRef = await resolveLocatorByRef(page, ref);
+                if (byRef) {
+                  const el = byRef;
+                  await el.waitFor({ state: 'visible', timeout: t });
+                  // 役割が不明でも checkbox 判定を試行
+                  let isCheckbox = false;
+                  try { const r = await el.getAttribute('role'); isCheckbox = String(r||'').toLowerCase() === 'checkbox'; } catch {}
+                  await clickWithFallback(page, el, isCheckbox);
+                  resolved = true;
+                }
+              } catch (e: any) { note = formatToolError(e); }
+            }
             if (!resolved && ref) {
               try {
                 const rn = preResolvedByRef.get(ref);
@@ -130,6 +156,17 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
           } else if (action === 'press') {
             if (ref || role) {
               let resolved = false;
+              // 1) ref 直接解決
+              if (!resolved && ref) {
+                try {
+                  const byRef = await resolveLocatorByRef(page, ref);
+                  if (byRef) {
+                    await byRef.waitFor({ state: 'visible', timeout: t });
+                    await byRef.press(key || 'Enter');
+                    resolved = true;
+                  }
+                } catch (e: any) { note = formatToolError(e); }
+              }
               if (!resolved && ref) {
                 try {
                   const rn = preResolvedByRef.get(ref);
