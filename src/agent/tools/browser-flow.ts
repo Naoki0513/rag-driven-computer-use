@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef, trySelectListboxOption } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -69,7 +69,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 if (byRef) {
                   await byRef.waitFor({ state: 'visible', timeout: t });
                   await byRef.fill(text);
-                  try { await trySelectListboxOption(page, byRef, text); } catch {}
                   resolved = true;
                 }
               } catch (e: any) { note = formatToolError(e); }
@@ -83,7 +82,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                     : page.getByRole(rn.role as any);
                   await loc.first().waitFor({ state: 'visible', timeout: t });
                   await loc.first().fill(text);
-                  try { await trySelectListboxOption(page, loc.first(), text); } catch {}
                   resolved = true;
                 }
               } catch (e: any) { note = formatToolError(e); }
@@ -95,7 +93,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   : page.getByRole(role as any);
                 await locator.first().waitFor({ state: 'visible', timeout: t });
                 await locator.first().fill(text);
-                try { await trySelectListboxOption(page, locator.first(), text); } catch {}
                 resolved = true;
               } catch (e: any) { note = formatToolError(e); }
             }
@@ -165,15 +162,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   const byRef = await resolveLocatorByRef(page, ref);
                   if (byRef) {
                     await byRef.waitFor({ state: 'visible', timeout: t });
-                    if ((key || 'Enter') === 'Enter') {
-                      try {
-                        const val = await byRef.inputValue().catch(() => '');
-                        const selected = await trySelectListboxOption(page, byRef, val || '');
-                        if (selected) {
-                          resolved = true;
-                        }
-                      } catch {}
-                    }
                     await byRef.press(key || 'Enter');
                     resolved = true;
                   }
@@ -187,15 +175,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                       ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
                       : page.getByRole(rn.role as any);
                     await loc.first().waitFor({ state: 'visible', timeout: t });
-                    if ((key || 'Enter') === 'Enter') {
-                      try {
-                        const val = await loc.first().inputValue().catch(() => '');
-                        const selected = await trySelectListboxOption(page, loc.first(), val || '');
-                        if (selected) {
-                          resolved = true;
-                        }
-                      } catch {}
-                    }
                     await loc.first().press(key || 'Enter');
                     resolved = true;
                   }
@@ -207,15 +186,6 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                     ? page.getByRole(role as any, { name, exact: true } as any)
                     : page.getByRole(role as any);
                 await locator.first().waitFor({ state: 'visible', timeout: t });
-                if ((key || 'Enter') === 'Enter') {
-                  try {
-                    const val = await locator.first().inputValue().catch(() => '');
-                    const selected = await trySelectListboxOption(page, locator.first(), val || '');
-                    if (selected) {
-                      resolved = true;
-                    }
-                  } catch {}
-                }
                 await locator.first().press(key || 'Enter');
                 resolved = true;
                 } catch (e: any) { note = formatToolError(e); }
