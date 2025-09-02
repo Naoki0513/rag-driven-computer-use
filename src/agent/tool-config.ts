@@ -34,6 +34,9 @@ export function buildToolConfig(): ToolConfiguration {
         }
       },
       {
+        cachePoint: { type: 'default' } as any,
+      },
+      {
         toolSpec: {
           name: 'browser_goto',
           description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
