@@ -14,20 +14,51 @@ function detectRegionFromModelId(modelId: string): string | null {
   return null;
 }
 
+function parseRegionsFromEnv(): string[] {
+  const raw = String(process.env.AGENT_AWS_REGION ?? '').trim();
+  if (!raw) return [];
+  const list = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  // 重複排除（順序維持）
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of list) {
+    if (!seen.has(r)) { seen.add(r); out.push(r); }
+  }
+  return out;
+}
+
+function regionsMatchingModelIdPrefix(modelId: string, regions: string[]): string[] {
+  const lower = String(modelId || '').toLowerCase();
+  if (!regions.length) return [];
+  if (lower.startsWith('us.')) return regions.filter((r) => r.startsWith('us-'));
+  if (lower.startsWith('eu.')) return regions.filter((r) => r.startsWith('eu-'));
+  if (lower.startsWith('apac.')) return regions.filter((r) => r.startsWith('ap-'));
+  return regions;
+}
+
 function buildModelCandidates(): ModelCandidate[] {
   const listEnv = String(process.env.AGENT_BEDROCK_MODEL_IDS ?? '').trim();
   const singleModel = String(process.env.AGENT_BEDROCK_MODEL_ID ?? '').trim();
-  const defaultRegion = String(process.env.AGENT_AWS_REGION ?? '').trim();
+  const regionList = parseRegionsFromEnv();
   const candidates: ModelCandidate[] = [];
 
   if (listEnv) {
     const ids = listEnv.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
     for (const id of ids) {
-      const region = detectRegionFromModelId(id) || defaultRegion;
-      if (!region) {
-        throw new Error(`モデルIDからリージョンを特定できませんでした。modelId=${id} に対応するリージョンが不明です（us./eu./apac. 接頭辞、または AGENT_AWS_REGION を設定してください）`);
+      // AGENT_AWS_REGION に複数渡された場合は、その全リージョン（モデル接頭辞に合致するもの）で候補を生成
+      const regionCandidates = regionsMatchingModelIdPrefix(id, regionList);
+      if (regionCandidates.length > 0) {
+        for (const r of regionCandidates) candidates.push({ modelId: id, region: r });
+      } else {
+        const fallback = detectRegionFromModelId(id) || regionList[0];
+        if (!fallback) {
+          throw new Error(`モデルIDからリージョンを特定できませんでした。modelId=${id} に対応するリージョンが不明です（us./eu./apac. 接頭辞、または AGENT_AWS_REGION を設定してください）`);
+        }
+        candidates.push({ modelId: id, region: fallback });
       }
-      candidates.push({ modelId: id, region });
     }
     return candidates;
   }
@@ -39,11 +70,16 @@ function buildModelCandidates(): ModelCandidate[] {
       : [singleModel];
     const list: ModelCandidate[] = [];
     for (const id of ids) {
-      const region = detectRegionFromModelId(id) || defaultRegion;
-      if (!region) {
-        throw new Error('AGENT_AWS_REGION が未設定です (.env を確認)');
+      const regionCandidates = regionsMatchingModelIdPrefix(id, regionList);
+      if (regionCandidates.length > 0) {
+        for (const r of regionCandidates) list.push({ modelId: id, region: r });
+      } else {
+        const fallback = detectRegionFromModelId(id) || regionList[0];
+        if (!fallback) {
+          throw new Error('AGENT_AWS_REGION が未設定です (.env を確認)');
+        }
+        list.push({ modelId: id, region: fallback });
       }
-      list.push({ modelId: id, region });
     }
     return list;
   }

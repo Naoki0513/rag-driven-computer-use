@@ -22,6 +22,20 @@ export type ConverseLoopResult = {
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 };
 
+// リージョンのスロットリング健康状態（単純なクールダウン）
+const regionThrottleUntil = new Map<string, number>();
+function isRegionCoolingDown(region: string): boolean {
+  const until = regionThrottleUntil.get(region) ?? 0;
+  return Date.now() < until;
+}
+function markRegionThrottled(region: string): void {
+  const ms = Math.max(1, Math.trunc(Number(process.env.AGENT_REGION_THROTTLE_COOLDOWN_MS || 15000)));
+  regionThrottleUntil.set(region, Date.now() + ms);
+}
+function clearRegionThrottle(region: string): void {
+  regionThrottleUntil.delete(region);
+}
+
 export async function converseLoop(
   query: string,
   systemPrompt: string,
@@ -40,6 +54,22 @@ export async function converseLoop(
   }
   const messages: Message[] = [{ role: 'user', content: [{ text: query }] }];
 
+  // リージョン順序（候補の出現順で重複排除）とリージョン→候補の対応
+  const regionOrder: string[] = [];
+  for (const c of candidates) {
+    if (!regionOrder.includes(c.region)) regionOrder.push(c.region);
+  }
+  if (regionOrder.length === 0) throw new Error('リージョン候補が空です');
+  const regionToCandidates = new Map<string, Array<{ modelId: string; region: string }>>();
+  for (const r of regionOrder) regionToCandidates.set(r, []);
+  for (const c of candidates) {
+    const list = regionToCandidates.get(c.region);
+    if (list) list.push(c);
+  }
+  // 失敗するまで同一リージョンを使い続けるためのインデックス
+  let activeRegionIndex = 0;
+  console.log(`[Region Router] 初期アクティブリージョン: ${regionOrder[activeRegionIndex]}（順序: ${regionOrder.join(' -> ')}）`);
+
   let totalInput = 0;
   let totalOutput = 0;
   let totalCacheRead = 0;
@@ -48,69 +78,87 @@ export async function converseLoop(
 
   while (true) {
     const currentMessages = addCachePoints(messages, anyClaude, anyNova);
-    // 各ターンごとにプライマリから順に試行（エラー時は都度プライマリに戻す）
     let response: ConverseResponse | undefined;
     let lastError: any;
-    for (let i = 0; i < candidates.length; i += 1) {
-      const { modelId, region } = candidates[i]!;
-      console.log(`[PerTurn Failover] 試行 ${i + 1}/${candidates.length}: model=${modelId}, region=${region}`);
-      const client = new BedrockRuntimeClient({ region });
-      const lowerId = modelId.toLowerCase();
 
-      const additionalModelRequestFields: Record<string, any> = {};
-      const betaTags: string[] = [];
-      if (modelId === 'us.anthropic.claude-sonnet-4-20250514-v1:0') {
-        betaTags.push(process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07');
-      }
-      if (lowerId.includes('anthropic.claude-3-7-sonnet-20250219')) {
-        betaTags.push('token-efficient-tools-2025-02-19');
-      }
-      if (betaTags.length) additionalModelRequestFields['anthropic_beta'] = betaTags;
+    // 現在のアクティブリージョンから順に直列で試行し、成功リージョンを固定
+    for (let step = 0; step < regionOrder.length; step += 1) {
+      const regionIndex = (activeRegionIndex + step) % regionOrder.length;
+      const region = regionOrder[regionIndex]!;
+      const regionCandidates = regionToCandidates.get(region) ?? [];
+      if (!regionCandidates.length) continue;
+      console.log(`[PerTurn Sequential] 試行リージョン ${step + 1}/${regionOrder.length}: region=${region}`);
 
-      const cmd = new ConverseCommand({
-        modelId,
-        system,
-        toolConfig,
-        messages: currentMessages as any,
-        inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
-        additionalModelRequestFields,
-      });
-      if (Object.keys(additionalModelRequestFields).length) {
-        console.log(`[Debug] additionalModelRequestFields: ${JSON.stringify(additionalModelRequestFields)}`);
-      }
-      const obsHandle = recordBedrockCallStart({
-        modelId,
-        region,
-        input: {
+      for (let i = 0; i < regionCandidates.length; i += 1) {
+        const { modelId } = regionCandidates[i]!;
+        console.log(`[Region Attempt] model=${modelId}, region=${region}`);
+        const client = new BedrockRuntimeClient({ region });
+        const lowerId = modelId.toLowerCase();
+
+        const additionalModelRequestFields: Record<string, any> = {};
+        const betaTags: string[] = [];
+        if (modelId === 'us.anthropic.claude-sonnet-4-20250514-v1:0') {
+          betaTags.push(process.env.AGENT_ANTHROPIC_BETA ?? 'context-1m-2025-08-07');
+        }
+        if (lowerId.includes('anthropic.claude-3-7-sonnet-20250219')) {
+          betaTags.push('token-efficient-tools-2025-02-19');
+        }
+        if (betaTags.length) additionalModelRequestFields['anthropic_beta'] = betaTags;
+
+        const cmd = new ConverseCommand({
+          modelId,
           system,
           toolConfig,
-          messages: currentMessages,
+          messages: currentMessages as any,
           inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
           additionalModelRequestFields,
-        },
-      });
-      try {
-        response = await client.send(cmd);
+        });
+        if (Object.keys(additionalModelRequestFields).length) {
+          console.log(`[Debug] additionalModelRequestFields: ${JSON.stringify(additionalModelRequestFields)}`);
+        }
+        const obsHandle = recordBedrockCallStart({
+          modelId,
+          region,
+          input: {
+            system,
+            toolConfig,
+            messages: currentMessages,
+            inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+            additionalModelRequestFields,
+          },
+        });
+
         try {
-          const usage = (response as any)?.usage ?? undefined;
-          const out: any = (response as any)?.output;
-          let textOut: string | undefined = undefined;
-          const content = out?.message?.content ?? [];
-          for (const block of content) if (block?.text) textOut = (textOut ?? '') + block.text;
-          const payload: any = { usage, response };
-          if (typeof textOut === 'string') payload.outputText = textOut;
-          recordBedrockCallSuccess(obsHandle, payload);
-        } catch {}
-        break;
-      } catch (e: any) {
-        try { recordBedrockCallError(obsHandle, e, { modelId, region }); } catch {}
-        const msg = String(e?.name || e?.message || e);
-        if (/Throttling/i.test(msg)) console.log('Throttlingエラーを検出: リトライせず次候補へ');
-        else console.log(`[PerTurn Failover] エラー: ${msg} → 次候補へ`);
-        lastError = e;
-        continue;
+          const res = await client.send(cmd);
+          try {
+            const usage = (res as any)?.usage ?? undefined;
+            const out: any = (res as any)?.output;
+            let textOut: string | undefined = undefined;
+            const content = out?.message?.content ?? [];
+            for (const block of content) if (block?.text) textOut = (textOut ?? '') + block.text;
+            const payload: any = { usage, response: res };
+            if (typeof textOut === 'string') payload.outputText = textOut;
+            recordBedrockCallSuccess(obsHandle, payload);
+          } catch {}
+          response = res;
+          if (activeRegionIndex !== regionIndex) {
+            console.log(`[Region Router] アクティブリージョンを更新: ${regionOrder[activeRegionIndex]} -> ${region}`);
+          }
+          activeRegionIndex = regionIndex;
+          break;
+        } catch (e: any) {
+          try { recordBedrockCallError(obsHandle, e, { modelId, region }); } catch {}
+          lastError = e;
+          const msg = String(e?.name || e?.message || e || '');
+          console.log(`[Region Attempt] 失敗 model=${modelId} region=${region} msg=${msg}`);
+          continue;
+        }
       }
+
+      if (response) break; // このリージョンで成功
+      console.log(`[PerTurn Sequential] リージョン失敗: ${region} → 次リージョンへフェイルオーバー`);
     }
+
     if (!response) throw lastError ?? new Error('No response from Bedrock');
 
     const usage = response.usage ?? ({} as any);

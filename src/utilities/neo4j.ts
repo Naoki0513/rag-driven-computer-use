@@ -93,6 +93,7 @@ export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
        SET n.site = $site,
            n.url = $url,
            n.snapshot_for_ai = $snapshot_for_ai,
+           n.snapshot_in_md = $snapshot_in_md,
            n.timestamp = $timestamp,
            n.depth = $depth`,
       {
@@ -100,6 +101,7 @@ export async function saveNode(driver: Driver, node: NodeState): Promise<void> {
         site: node.site,
         url: node.url,
         snapshot_for_ai: node.snapshotForAI,
+        snapshot_in_md: node.snapshotInMd,
         timestamp: node.timestamp,
         depth: node.depth,
       },

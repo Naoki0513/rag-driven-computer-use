@@ -146,6 +146,8 @@ export class WebCrawler {
     try {
       const preview = node.snapshotForAI.slice(0, 200).replace(/\s+/g, ' ');
       console.info(`[snapshotForAI] ${preview}${node.snapshotForAI.length > 200 ? '…' : ''}`);
+      const mdPreview = (node.snapshotInMd || '').slice(0, 200).replace(/\s+/g, ' ');
+      if (mdPreview) console.info(`[snapshotInMd] ${mdPreview}${(node.snapshotInMd || '').length > 200 ? '…' : ''}`);
     } catch {}
     if (this.driver) await saveNode(this.driver, node);
     return node;
