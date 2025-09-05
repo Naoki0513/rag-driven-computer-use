@@ -64,8 +64,8 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
-          name: 'search_by_keywords',
-          description: 'keywords 配列に含まれる全キーワードを snapshot_for_ai に含む Page を検索します（id(p), snapshot_for_ai, depth, url を返す、最大3件）。',
+          name: 'keyword_search',
+          description: '各ページの Markdown テキスト(snapshot_in_md)に対して、与えた keywords の全語を AND 条件で検索し、関連しそうな Page を最大3件返します（id(p), snapshot_in_md, depth, url）。到達したいページを見つけて id を取得するためのツールです。',
           inputSchema: {
             json: {
               type: 'object',

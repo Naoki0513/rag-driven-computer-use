@@ -11,10 +11,10 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
   - システムから与えられるスキーマ情報（全ノードラベルおよび全リレーションシップタイプと、それぞれに含まれるプロパティキー一覧）を前提知識として用いる。
   - 以降のクエリでラベル名・リレーション名・プロパティ名を厳密に使用する。
 
-2) キーワード検索（Snapshot for AI）:
+2) キーワード検索（Markdown Snapshot）:
   - ユーザーの要求から重要キーワードを抽出する。
-  - 1語以上のキーワードがある場合は search_by_keywords を優先して使い、複数語は AND 条件で検索する（最大3件返却）。
-    例: search_by_keywords {"keywords": ["請求", "ダッシュボード"]}
+  - 1語以上のキーワードがある場合は keyword_search を優先して使い、複数語は AND 条件で検索する（最大3件返却）。
+    例: keyword_search {"keywords": ["請求", "ダッシュボード"]}
   - 必要に応じて run_cypher で追加の絞り込みや確認を行う。
 
 3) 対象ページの決定と遷移:
@@ -31,7 +31,7 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
     - browser_press: {"ref": "eXX", "key": "<Enter など>"}
 
 フォールバックポリシー:
-- 原則として使用するツールは「search_by_keywords」「browser_goto」「browser_flow」の3つのみ。
+- 原則として使用するツールは「keyword_search」「browser_goto」「browser_flow」の3つのみ。
 - 例外的に問題の切り分けや回避のために、次を最小回数・必要最小限で使用してよい: browser_click / browser_input / browser_press / browser_login / run_cypher。
 - 同一ツールの重複連打は避ける（特に browser_goto は各1回）。
 
