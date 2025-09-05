@@ -74,11 +74,17 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
   try {
     const gen: any = handle?.generation;
     if (!gen) return;
+    const meta: Record<string, any> = {};
+    try {
+      if (payload?.response?.ResponseMetadata) meta.ResponseMetadata = payload.response.ResponseMetadata;
+    } catch {}
+    if (typeof payload?.outputText === 'string') meta.outputText = payload.outputText;
     const body = {
-      output: payload.outputText ?? payload.response ?? null,
+      // 常に生レスポンス全文を送信（テキストは metadata に併記）
+      output: payload.response ?? null,
       usage: payload.usage ?? undefined,
-      metadata: payload.response ? { ResponseMetadata: payload.response?.ResponseMetadata } : undefined,
-    };
+      metadata: Object.keys(meta).length ? meta : undefined,
+    } as any;
     if (typeof gen.end === 'function') gen.end(body);
     else if (typeof gen.update === 'function') gen.update(body);
   } catch (_e) {
