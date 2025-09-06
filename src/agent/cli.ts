@@ -2,8 +2,67 @@ import 'dotenv/config';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { runSingleQuery } from './runner.js';
+import { closeSharedBrowserWithDelay } from './tools/util.js';
+import fs from 'fs';
+import path from 'path';
+
+// 強制終了/例外時のクリーンアップ（ブラウザ終了と todo.md 削除）
+let _exiting = false;
+async function gracefulCleanupAndExit(code: number): Promise<never> {
+  if (_exiting) {
+    // 既に終了処理中。待機せず即終了
+    process.exit(code);
+  }
+  _exiting = true;
+  try {
+    // 即時クローズ（遅延 0ms）
+    await closeSharedBrowserWithDelay(0);
+  } catch {}
+  try {
+    const todoPath = path.resolve(process.cwd(), 'todo.md');
+    if (fs.existsSync(todoPath)) {
+      try { fs.unlinkSync(todoPath); } catch {}
+    }
+  } catch {}
+  process.exit(code);
+}
+
+function installGlobalCleanupHandlers(): void {
+  const onSignal = (sig: NodeJS.Signals) => {
+    const code = sig === 'SIGINT' ? 130 : (sig === 'SIGTERM' ? 143 : 0);
+    try { console.log(`[Signal] ${sig} を受信。クリーンアップして終了します...`); } catch {}
+    // 非同期クリーンアップを待ってから終了
+    void gracefulCleanupAndExit(code);
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+  // Windows の Ctrl+Break 対応
+  try { process.on('SIGBREAK', onSignal as any); } catch {}
+  // 端末切断など
+  try { process.on('SIGHUP', onSignal); } catch {}
+
+  process.on('uncaughtException', (err) => {
+    try { console.error('uncaughtException:', err?.message ?? err); } catch {}
+    void gracefulCleanupAndExit(1);
+  });
+  process.on('unhandledRejection', (reason: any) => {
+    try { console.error('unhandledRejection:', reason?.message ?? reason); } catch {}
+    void gracefulCleanupAndExit(1);
+  });
+
+  // 最終フォールバック（同期削除のみ可能）
+  process.on('exit', () => {
+    try {
+      const todoPath = path.resolve(process.cwd(), 'todo.md');
+      if (fs.existsSync(todoPath)) {
+        try { fs.unlinkSync(todoPath); } catch {}
+      }
+    } catch {}
+  });
+}
 
 async function main() {
+  installGlobalCleanupHandlers();
   const argv = yargs(hideBin(process.argv))
     .usage('$0 [query]')
     .option('prompt', {
