@@ -114,7 +114,7 @@ export async function converseLoop(
           system,
           toolConfig,
           messages: currentMessages as any,
-          inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+          inferenceConfig: { maxTokens: 4096, temperature: 0 },
           additionalModelRequestFields,
         });
         if (Object.keys(additionalModelRequestFields).length) {
@@ -127,7 +127,7 @@ export async function converseLoop(
             system,
             toolConfig,
             messages: currentMessages,
-            inferenceConfig: { maxTokens: 4096, temperature: 0.5 },
+            inferenceConfig: { maxTokens: 4096, temperature: 0 },
             additionalModelRequestFields,
           },
         });
