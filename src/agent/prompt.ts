@@ -31,7 +31,7 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
     - browser_press: {"ref": "eXX", "key": "<Enter など>"}
 
 フォールバックポリシー:
-- 原則として使用するツールは「keyword_search」「browser_goto」「browser_flow」の3つのみ。
+- 原則として使用するツールは「keyword_search」「browser_goto」「browser_flow」の3つ＋必要に応じて「browser_snapshot」。
 - 例外的に問題の切り分けや回避のために、次を最小回数・必要最小限で使用してよい: browser_click / browser_input / browser_press / browser_login / run_cypher。
 - 同一ツールの重複連打は避ける（特に browser_goto は各1回）。
 

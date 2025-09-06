@@ -14,6 +14,7 @@ import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
 import { browserFlow } from './tools/browser-flow.js';
+import { browserSnapshot } from './tools/browser-snapshot.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
@@ -194,7 +195,14 @@ export async function converseLoop(
         const toolUse = block.toolUse as ToolUseInput;
         const name = toolUse.name;
         const toolUseId = (toolUse as any).toolUseId as string;
-        if (name === 'run_cypher') {
+        if (name === 'browser_snapshot') {
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log('Calling tool: browser_snapshot');
+            const result = await browserSnapshot();
+            console.log(`Tool result (browser_snapshot): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'run_cypher') {
           const q = (toolUse as any).input?.query ?? '';
           parallelTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);

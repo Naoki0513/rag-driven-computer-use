@@ -5,6 +5,19 @@ export function buildToolConfig(): ToolConfiguration {
     tools: [
       {
         toolSpec: {
+          name: 'browser_snapshot',
+          description: '現在のページのスナップショット4AIを取得します（他ツールの後続検証や単体取得に使用）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {},
+              required: []
+            }
+          }
+        }
+      },
+      {
+        toolSpec: {
           name: 'browser_flow',
           description: '現在のページ上で、クリック/入力/キー送信の複数操作(steps)を順次一括実行します（要素解決は ref→role+name→href のフォールバック、実行後スナップショット返却）',
           inputSchema: {

@@ -20,6 +20,13 @@ async function main() {
   const positionalQuery = String(argv._[0] ?? argv.query ?? '').trim();
   // 優先度: --prompt/-p > 位置引数 > 環境変数
   const query = cliPromptOption || positionalQuery || envQuery;
+  // 受理したクエリのソースと内容を先に表示して、引数伝播の検証を容易にする
+  try {
+    const source = cliPromptOption ? '--prompt' : (positionalQuery ? 'positional' : (envQuery ? 'env' : 'none'));
+    if (source !== 'none') {
+      console.log(`[CLI] query source=${source} value="${query}"`);
+    }
+  } catch {}
   if (!query) {
     console.error('クエリが指定されていません（--prompt/-p または 位置引数、もしくは AGENT_QUERY 環境変数で指定してください）');
     process.exit(1);
