@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -9,7 +9,8 @@ export async function browserLogin(url: string): Promise<string> {
     const username = String(process.env.AGENT_BROWSER_USERNAME ?? '').trim();
     const password = String(process.env.AGENT_BROWSER_PASSWORD ?? '').trim();
     if (!username || !password) {
-      return JSON.stringify({ ok: 'エラー: AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD が未設定です', action: 'login', url });
+      const payload = await attachTodos({ ok: 'エラー: AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD が未設定です', action: 'login', url });
+      return JSON.stringify(payload);
     }
 
     try {
@@ -87,19 +88,22 @@ export async function browserLogin(url: string): Promise<string> {
       await page.waitForLoadState('networkidle', { timeout: t });
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ ok: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { ok: formatToolError(e), action: 'login', url };
+      let payload: any = { ok: formatToolError(e), action: 'login', url };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
       }
+      payload = await attachTodos(payload);
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ ok: formatToolError(e), action: 'login', url });
+    const payload = await attachTodos({ ok: formatToolError(e), action: 'login', url });
+    return JSON.stringify(payload);
   }
 }
 

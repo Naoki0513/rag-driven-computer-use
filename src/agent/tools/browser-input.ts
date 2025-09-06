@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -22,25 +22,29 @@ export async function browserInput(ref: string, text: string): Promise<string> {
         await fallback.fill(text);
         const snaps0 = await takeSnapshots(page);
         const snapshotId0 = await findPageIdByHashOrUrl(snaps0.hash, snaps0.url);
-        return JSON.stringify({ ok: true, action: 'input', ref, text, snapshots: { text: snaps0.text, id: snapshotId0 } });
+        const payload0 = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps0.text, id: snapshotId0 } });
+        return JSON.stringify(payload0);
       }
       await loc.waitFor({ state: 'visible', timeout: t });
       await loc.fill(text);
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ ok: true, action: 'input', ref, text, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { ok: formatToolError(e), action: 'input', ref, text };
+      let payload: any = { ok: formatToolError(e), action: 'input', ref, text };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
       }
+      payload = await attachTodos(payload);
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ ok: formatToolError(e), action: 'input', ref, text });
+    const payload = await attachTodos({ ok: formatToolError(e), action: 'input', ref, text });
+    return JSON.stringify(payload);
   }
 }
 

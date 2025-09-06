@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 
 export async function browserSnapshot(): Promise<string> {
@@ -7,19 +7,22 @@ export async function browserSnapshot(): Promise<string> {
     try {
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ ok: true, action: 'snapshot', snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'snapshot', snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { ok: formatToolError(e), action: 'snapshot' };
+      let payload: any = { ok: formatToolError(e), action: 'snapshot' };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
       }
+      payload = await attachTodos(payload);
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ ok: formatToolError(e), action: 'snapshot' });
+    const payload = await attachTodos({ ok: formatToolError(e), action: 'snapshot' });
+    return JSON.stringify(payload);
   }
 }
 

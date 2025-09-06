@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, attachTodos } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
@@ -71,11 +71,12 @@ LIMIT 1`;
         const note = formatToolError(e);
         performed.push({ stage: 'navigate', ok: note });
         const snaps = await takeSnapshots(page).catch(() => null as any);
-        const payload: any = { action: 'goto', targetId, navigateUrl, performed };
+        let payload: any = { action: 'goto', targetId, navigateUrl, performed };
         if (snaps) {
           const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
           payload.snapshots = { text: snaps.text, id: snapshotId };
         }
+        payload = await attachTodos(payload);
         return JSON.stringify(payload);
       }
 
@@ -144,12 +145,14 @@ LIMIT 1`;
 
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ action: 'goto', targetId, navigateUrl, clickSteps, performed, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ action: 'goto', targetId, navigateUrl, clickSteps, performed, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify(payload);
     } finally {
       await session.close();
     }
   } catch (e: any) {
-    return JSON.stringify({ action: 'goto', targetId, performed: [{ stage: 'fatal', ok: formatToolError(e) }] });
+    const payload = await attachTodos({ action: 'goto', targetId, performed: [{ stage: 'fatal', ok: formatToolError(e) }] });
+    return JSON.stringify(payload);
   } finally {
     await closeDriver(driver);
   }

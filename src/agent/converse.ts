@@ -15,6 +15,7 @@ import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
 import { browserFlow } from './tools/browser-flow.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
+import { todoTool } from './tools/todo.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
 
@@ -195,7 +196,15 @@ export async function converseLoop(
         const toolUse = block.toolUse as ToolUseInput;
         const name = toolUse.name;
         const toolUseId = (toolUse as any).toolUseId as string;
-        if (name === 'browser_snapshot') {
+        if (name === 'todo') {
+          const input = (toolUse as any).input ?? {};
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: todo with input: ${JSON.stringify(input)}`);
+            const result = await todoTool(input as any);
+            console.log(`Tool result (todo): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_snapshot') {
           browserTasks.push({ index: i, toolUseId, run: async () => {
             console.log('Calling tool: browser_snapshot');
             const result = await browserSnapshot();

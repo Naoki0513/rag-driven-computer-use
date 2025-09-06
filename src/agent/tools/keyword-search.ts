@@ -1,5 +1,6 @@
 import type { Driver } from 'neo4j-driver';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
+import { attachTodos } from './util.js';
 
 // keyword_search: 各ページをテキスト化した Markdown（snapshot_in_md）を対象に、
 // 与えられたキーワード配列を AND 条件で検索し、関連しそうな Page を最大3件返す。
@@ -9,10 +10,16 @@ export async function keywordSearch(keywords: string[]): Promise<string> {
     const uri = process.env.AGENT_NEO4J_URI;
     const user = process.env.AGENT_NEO4J_USER;
     const password = process.env.AGENT_NEO4J_PASSWORD;
-    if (!uri || !user || !password) return 'エラー: Neo4j接続情報(AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD)が未設定です';
+    if (!uri || !user || !password) {
+      const payload = await attachTodos({ ok: false, error: 'エラー: Neo4j接続情報(AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD)が未設定です' });
+      return JSON.stringify(payload);
+    }
 
     const list = Array.isArray(keywords) ? keywords.filter((k) => typeof k === 'string' && k.trim().length > 0) : [];
-    if (!list.length) return 'エラー: keywords が空です';
+    if (!list.length) {
+      const payload = await attachTodos({ ok: false, error: 'エラー: keywords が空です' });
+      return JSON.stringify(payload);
+    }
 
     let driver: Driver | null = null;
     driver = await createDriver(uri, user, password);
@@ -27,16 +34,21 @@ ORDER BY id ASC
 LIMIT 3`;
       const res = await session.run(cypher, { keywords: list });
       const records = res.records.map((r) => r.toObject());
-      if (!records.length) return '結果: 対象ページが見つかりませんでした';
+      if (!records.length) {
+        const payload = await attachTodos({ ok: true, result: '結果: 対象ページが見つかりませんでした' });
+        return JSON.stringify(payload);
+      }
       const lines: string[] = [];
       records.forEach((rec, i) => lines.push(`レコード ${i + 1}: ${JSON.stringify(rec)}`));
-      return lines.join('\n');
+      const payload = await attachTodos({ ok: true, result: lines.join('\n') });
+      return JSON.stringify(payload);
     } finally {
       await session.close();
       await closeDriver(driver);
     }
   } catch (e: any) {
-    return `エラー: ${String(e?.message ?? e)}`;
+    const payload = await attachTodos({ ok: false, error: `エラー: ${String(e?.message ?? e)}` });
+    return JSON.stringify(payload);
   }
 }
 

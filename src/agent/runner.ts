@@ -3,6 +3,8 @@ import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
 import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools/util.js';
 import { startSessionTrace } from '../utilities/observability.js';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 type ModelCandidate = { modelId: string; region: string };
 
@@ -120,6 +122,18 @@ export async function runSingleQuery(query: string): Promise<void> {
     console.log(`- 総キャッシュ読み取りトークン数: ${usage.cacheRead}`);
     console.log(`- 総キャッシュ書き込みトークン数: ${usage.cacheWrite}`);
     console.log(`- 総トークン数: ${usage.input + usage.output}`);
+
+    // ToDo ファイルの内容を最後にログ出力（検証用）
+    try {
+      const todoPath = path.resolve(process.cwd(), 'todo.md');
+      const content = (await fs.readFile(todoPath)).toString('utf-8');
+      console.log('\n現在の ToDo (todo.md):');
+      console.log('----------------------------------------');
+      console.log(content.trim() || '(空)');
+      console.log('----------------------------------------');
+    } catch {
+      console.log('\n現在の ToDo (todo.md): (ファイルなし)');
+    }
   } finally {
     // 完了時に5秒（または環境変数の指定 ms）待ってからクローズ
     await closeSharedBrowserWithDelay();

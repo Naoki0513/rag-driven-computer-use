@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, resolveLocatorByRef, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -26,19 +26,22 @@ export async function browserPress(ref: string, key: string): Promise<string> {
       }
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({ ok: true, action: 'press', ref, key, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'press', ref, key, snapshots: { text: snaps.text, id: snapshotId } });
+      return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
-      const payload: any = { ok: formatToolError(e), action: 'press', ref, key };
+      let payload: any = { ok: formatToolError(e), action: 'press', ref, key };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         payload.snapshots = { text: snaps.text, id: snapshotId };
       }
+      payload = await attachTodos(payload);
       return JSON.stringify(payload);
     }
   } catch (e: any) {
-    return JSON.stringify({ ok: formatToolError(e), action: 'press', ref, key });
+    const payload = await attachTodos({ ok: formatToolError(e), action: 'press', ref, key });
+    return JSON.stringify(payload);
   }
 }
 

@@ -3,6 +3,8 @@ import type { Locator } from 'playwright';
 import { captureNode, getSnapshotForAI } from '../../utilities/snapshots.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -42,6 +44,12 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
       sharedBrowser = null;
       sharedContext = null;
       sharedPage = null;
+      // ToDo ファイルの削除（同タイミング）
+      try {
+        const filePath = path.resolve(process.cwd(), 'todo.md');
+        await fs.unlink(filePath).catch(() => {});
+        console.log('ToDo ファイル(todo.md)を削除しました');
+      } catch {}
     }
   }
 }
@@ -258,6 +266,26 @@ export async function resolveLocatorByRef(
   } catch {}
 
   return null;
+}
+
+// ===== ToDo 連携ユーティリティ =====
+export async function readTodoFileContent(): Promise<{ path: string; content: string }> {
+  const filePath = path.resolve(process.cwd(), 'todo.md');
+  try {
+    const buf = await fs.readFile(filePath);
+    return { path: 'todo.md', content: buf.toString('utf-8') };
+  } catch {
+    return { path: 'todo.md', content: '' };
+  }
+}
+
+export async function attachTodos<T extends Record<string, any>>(payload: T): Promise<T & { todos: { path: string; content: string } }>{
+  try {
+    const todos = await readTodoFileContent();
+    return Object.assign(payload, { todos });
+  } catch {
+    return Object.assign(payload, { todos: { path: 'todo.md', content: '' } });
+  }
 }
 
 

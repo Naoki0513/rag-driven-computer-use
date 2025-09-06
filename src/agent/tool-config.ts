@@ -48,6 +48,32 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
+          name: 'todo',
+          description: 'エージェントの実行計画用のToDoを管理します（actions配列で一括指定）。操作後は常にtodo.mdの内容を返します。\n- addTask: texts(string[]) を渡します。例: {"actions":[{"action":"addTask","texts":["タスク1","タスク2"]}]}\n- setDone: indexes(number[]) を渡します。例: {"actions":[{"action":"setDone","indexes":[1,3]}]}\n- editTask: indexes(number[]) と texts(string[]) を同数で渡します。例: {"actions":[{"action":"editTask","indexes":[2],"texts":["新しい名前"]}]}',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                actions: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      action: { type: 'string', enum: ['addTask', 'setDone', 'editTask'] },
+                      texts: { type: 'array', items: { type: 'string' } },
+                      indexes: { type: 'array', items: { type: 'number' } }
+                    },
+                    required: ['action']
+                  }
+                }
+              },
+              required: ['actions']
+            }
+          }
+        }
+      },
+      {
+        toolSpec: {
           name: 'browser_goto',
           description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
           inputSchema: {

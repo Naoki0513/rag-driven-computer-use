@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef } from './util.js';
+import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
@@ -24,7 +24,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
 
   const steps: FlowStep[] = Array.isArray(input?.steps) ? input.steps : [];
   if (!Array.isArray(steps) || steps.length === 0) {
-    return JSON.stringify({ action: 'browser_flow', performed: [], error: 'エラー: steps が空です' });
+    const payload = await attachTodos({ action: 'browser_flow', performed: [], error: 'エラー: steps が空です' });
+    return JSON.stringify(payload);
   }
 
   try {
@@ -217,15 +218,17 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
 
       const snaps = await takeSnapshots(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      return JSON.stringify({
+      const payload = await attachTodos({
         action: 'browser_flow',
         selected: {},
         navigation: {},
         performed,
         snapshots: { text: snaps.text, id: snapshotId },
       });
+      return JSON.stringify(payload);
   } catch (e: any) {
-    return JSON.stringify({ action: 'browser_flow', performed: [], error: formatToolError(e) });
+    const payload = await attachTodos({ action: 'browser_flow', performed: [], error: formatToolError(e) });
+    return JSON.stringify(payload);
   }
 }
 
