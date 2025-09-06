@@ -1,87 +1,159 @@
 export type MessageBlock = { text?: string; cachePoint?: { type: string } };
 export type Message = { role: 'user' | 'assistant' | 'system'; content: MessageBlock[] };
 
+type CountsInput = { systemBlocks?: number; toolBlocks?: number };
+
 export function addCachePoints(
   messages: Message[],
   isClaude: boolean,
   isNova: boolean,
+  counts?: CountsInput,
 ): Message[] {
   if (!(isClaude || isNova)) return messages;
 
-  const maxPoints = isClaude ? 2 : isNova ? 3 : 0;
-  const messagesWithCache: Message[] = [];
-  let userTurnsProcessed = 0;
-  // Claude 向けの遅延: user メッセージが2件以上ある場合は最新の1件をスキップ
-  const totalUserMessages = messages.reduce((acc, m) => acc + (m.role === 'user' ? 1 : 0), 0);
-  const shouldSkipNewestUserOnce = isClaude && totalUserMessages >= 2;
-  let newestUserSkipped = false;
-  const cachedKinds: string[] = [];
-  // 直近のツールリザルト(TR)は残し、それより古いTRの snapshots.text を送信前に省略
-  let latestToolResultsKept = false;
+  // 深いコピー
+  const messagesCloned: Message[] = JSON.parse(JSON.stringify(messages));
 
-  for (const message of [...messages].reverse()) {
-    const m: Message = JSON.parse(JSON.stringify(message));
-    if (m.role === 'user') {
-      // ツールリザルトのスナップショットテキスト省略（最新のTRは保持し、それ以前は省略）
-      try {
-        const hasToolResult = Array.isArray(m.content) && m.content.some((c: any) => c && typeof c === 'object' && 'toolResult' in c);
-        if (hasToolResult) {
-          if (!latestToolResultsKept) {
-            // 今回が最新のTR（保持）
-            latestToolResultsKept = true;
-          } else {
-            // 古いTR: snapshots.text を省略（id は維持）
-            for (const block of m.content as any[]) {
-              if (!block || !block.toolResult) continue;
-              const tr = block.toolResult;
-              const contents = Array.isArray(tr.content) ? tr.content : [];
-              for (const cb of contents) {
-                if (!cb || typeof cb.text !== 'string') continue;
-                try {
-                  const obj = JSON.parse(cb.text);
-                  if (obj && typeof obj === 'object' && obj.snapshots && typeof obj.snapshots === 'object') {
-                    if ('text' in obj.snapshots) delete obj.snapshots.text;
-                    cb.text = JSON.stringify(obj);
-                  }
-                } catch {}
-              }
+  // すべての既存 cachePoint を除去（messages 内）
+  for (const m of messagesCloned as any[]) {
+    if (!Array.isArray(m.content)) m.content = [];
+    const filtered: any[] = [];
+    for (const block of m.content as any[]) {
+      if (block && typeof block === 'object' && 'cachePoint' in block) continue;
+      filtered.push(block);
+    }
+    m.content = filtered;
+  }
+
+  const systemBlocks = Math.max(0, Math.trunc(Number(counts?.systemBlocks ?? 0)));
+  const toolBlocks = Math.max(0, Math.trunc(Number(counts?.toolBlocks ?? 0)));
+  const maxBackBlocks = 20; // Claude の簡易管理が振り返る最大コンテンツブロック境界数（約）
+
+  function countMessageContentBlocksUpTo(endIndexInclusive: number): number {
+    let sum = 0;
+    for (let i = 0; i <= endIndexInclusive && i < messagesCloned.length; i += 1) {
+      const c: any[] = (messagesCloned[i] as any)?.content;
+      if (Array.isArray(c)) sum += c.length;
+    }
+    return sum;
+  }
+
+  // 直近のツールリザルト(TR)は保持し、それ以前は snapshots.text を省略
+  let latestToolResultsKept = false;
+  let elidedTargetIndex = -1;
+  for (let i = messagesCloned.length - 1; i >= 0; i -= 1) {
+    const m: any = messagesCloned[i];
+    if (m?.role !== 'user') continue;
+    try {
+      const hasToolResult = Array.isArray(m.content) && m.content.some((c: any) => c && typeof c === 'object' && 'toolResult' in c);
+      if (hasToolResult) {
+        if (!latestToolResultsKept) {
+          latestToolResultsKept = true; // 最新のTRは保持
+        } else {
+          if (elidedTargetIndex === -1) elidedTargetIndex = i; // 最も直前に省略したTR
+          for (const block of m.content as any[]) {
+            if (!block || !block.toolResult) continue;
+            const tr = block.toolResult;
+            const contents = Array.isArray(tr.content) ? tr.content : [];
+            for (const cb of contents) {
+              if (!cb || typeof cb.text !== 'string') continue;
+              try {
+                const obj = JSON.parse(cb.text);
+                if (obj && typeof obj === 'object' && obj.snapshots && typeof obj.snapshots === 'object') {
+                  if ('text' in obj.snapshots) delete obj.snapshots.text;
+                  cb.text = JSON.stringify(obj);
+                }
+              } catch {}
             }
           }
         }
-      } catch {}
-
-      if (shouldSkipNewestUserOnce && !newestUserSkipped) {
-        newestUserSkipped = true;
-        messagesWithCache.push(m);
-        continue;
       }
-      if (userTurnsProcessed < maxPoints) {
-        let appendCache = false;
-        if (isClaude) appendCache = true;
-        else if (isNova) {
-          const hasText = Array.isArray(m.content) && m.content.some((c) => typeof c === 'object' && 'text' in c);
-          if (hasText) appendCache = true;
-        }
-        if (appendCache) {
-          if (!Array.isArray(m.content)) m.content = [];
-          m.content.push({ cachePoint: { type: 'default' } });
-          userTurnsProcessed += 1;
-          try {
-            const hasToolResult = Array.isArray(m.content) && m.content.some((c: any) => c && typeof c === 'object' && 'toolResult' in c);
-            cachedKinds.push(hasToolResult ? 'TR' : 'U');
-          } catch {}
-        }
-      }
-    }
-    messagesWithCache.push(m);
+    } catch {}
   }
 
-  messagesWithCache.reverse();
+  // ターゲット選定（可動式: elided 優先 → なければ 1回目/2回目フォールバック）
+  let targetIndex = -1;
+  let reason = 'none';
+  if (elidedTargetIndex !== -1) {
+    targetIndex = elidedTargetIndex;
+    reason = 'messages:elided';
+  } else {
+    // フォールバック: 1回目は最初の user、2回目は2番目の user
+    const userIndexes: number[] = [];
+    for (let i = 0; i < messagesCloned.length; i += 1) if ((messagesCloned[i] as any)?.role === 'user') userIndexes.push(i);
+    const firstUserIndex = userIndexes.length >= 1 ? userIndexes[0]! : -1;
+    const secondUserIndex = userIndexes.length >= 2 ? userIndexes[1]! : -1;
+    if (secondUserIndex !== -1) {
+      targetIndex = secondUserIndex;
+      reason = 'messages:fallback:second';
+    } else if (firstUserIndex !== -1) {
+      targetIndex = firstUserIndex;
+      reason = 'messages:fallback:first';
+    }
+  }
+
+  // 付与位置の決定と追加（重複回避）
+  const addedAt: string[] = [];
+  const addedIndexSet = new Set<number>();
+
+  // 可動式アンカー（常に現在の方針どおり）
+  if (targetIndex !== -1) {
+    const anchorMsg: any = messagesCloned[targetIndex];
+    if (!Array.isArray(anchorMsg.content)) anchorMsg.content = [];
+    anchorMsg.content.push({ cachePoint: { type: 'default' } });
+    addedAt.push(`movable@u${targetIndex}`);
+    addedIndexSet.add(targetIndex);
+  }
+
+  // 固定式アンカー（20/40/60 ... のしきい値）。可動式の位置は変えず、越えた境界の user に固定。
+  function findUserCrossingIndex(threshold: number): number {
+    // system+tool+messages の累積ブロックがしきい値を超える最初のメッセージ index を求め、そこから後方に最近の user を探す
+    let running = systemBlocks + toolBlocks;
+    for (let i = 0; i < messagesCloned.length; i += 1) {
+      const c: any[] = (messagesCloned[i] as any)?.content;
+      const len = Array.isArray(c) ? c.length : 0;
+      running += len;
+      if (running >= threshold) {
+        // i から後方に最近の user を探す
+        for (let j = i; j >= 0; j -= 1) {
+          if ((messagesCloned[j] as any)?.role === 'user') return j;
+        }
+        return -1;
+      }
+    }
+    return -1;
+  }
+
+  const thresholds: number[] = [maxBackBlocks, maxBackBlocks * 2, maxBackBlocks * 3]; // 20, 40, 60
+  const maxCheckpointsPerRequest = 4; // Claude/Nova ともに 4
+  const blocksUpToAnchor = targetIndex !== -1 ? countMessageContentBlocksUpTo(targetIndex) : countMessageContentBlocksUpTo(messagesCloned.length - 1);
+  const totalBlocksUpToAnchor = systemBlocks + toolBlocks + blocksUpToAnchor;
+
+  const remainingSlots = Math.max(0, maxCheckpointsPerRequest - addedIndexSet.size);
+  if (remainingSlots > 0) {
+    let used = 0;
+    for (let k = 0; k < thresholds.length; k += 1) {
+      if (used >= remainingSlots) break;
+      const t = thresholds[k] ?? undefined;
+      if (t === undefined) continue;
+      if (totalBlocksUpToAnchor < t) break; // まだ到達していない境界
+      const idx = findUserCrossingIndex(t);
+      if (idx !== -1 && !addedIndexSet.has(idx)) {
+        const m: any = messagesCloned[idx];
+        if (!Array.isArray(m.content)) m.content = [];
+        m.content.push({ cachePoint: { type: 'default' } });
+        addedAt.push(`fixed@${t}:u${idx}`);
+        addedIndexSet.add(idx);
+        used += 1;
+      }
+    }
+  }
+
   try {
     const dbg = String(process.env.AGENT_DEBUG_CACHEPOINTS ?? '').toLowerCase();
     if (dbg === '1' || dbg === 'true') {
       // eslint-disable-next-line no-console
-      console.log(`[CachePoints] isClaude=${isClaude} isNova=${isNova} addedOn=${cachedKinds.join(',')}`);
+      console.log(`[CachePoints] isClaude=${isClaude} isNova=${isNova} reason=${reason} added=${addedAt.join(',')} systemBlocks=${systemBlocks} toolBlocks=${toolBlocks}`);
     }
     const dbg2 = String(process.env.AGENT_DEBUG_ELIDE_SNAPSHOTS ?? '').toLowerCase();
     if (dbg2 === '1' || dbg2 === 'true') {
@@ -89,7 +161,7 @@ export function addCachePoints(
       console.log('[ElideSnapshots] 古いツールリザルトの snapshots.text を省略しました（最新のみ保持）。');
     }
   } catch {}
-  return messagesWithCache;
+  return messagesCloned;
 }
 
 

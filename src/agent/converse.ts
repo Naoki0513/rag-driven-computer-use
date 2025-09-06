@@ -49,10 +49,12 @@ export async function converseLoop(
 
   const toolConfig = buildToolConfig();
   const system: SystemContentBlock[] = [{ text: systemPrompt } as SystemContentBlock];
-  if (anyClaude) {
-    system.push({ cachePoint: { type: 'default' } } as unknown as SystemContentBlock);
-  }
   const messages: Message[] = [{ role: 'user', content: [{ text: query }] }];
+  // cacheUtils の固定式アンカー用: tools/system のブロック数を事前計算
+  const counts = {
+    systemBlocks: Array.isArray(system) ? system.length : 0,
+    toolBlocks: (toolConfig as any)?.tools && Array.isArray((toolConfig as any).tools) ? (toolConfig as any).tools.length : 0,
+  };
 
   // リージョン順序（候補の出現順で重複排除）とリージョン→候補の対応
   const regionOrder: string[] = [];
@@ -77,7 +79,7 @@ export async function converseLoop(
   let fullText = '';
 
   while (true) {
-    const currentMessages = addCachePoints(messages, anyClaude, anyNova);
+    const currentMessages = addCachePoints(messages, anyClaude, anyNova, counts as any);
     let response: ConverseResponse | undefined;
     let lastError: any;
 
