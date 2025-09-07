@@ -68,7 +68,28 @@ export function formatToolError(err: unknown, maxLen: number = 180): string {
   return `エラー: ${head}`;
 }
 
-// resolveLocatorByRef は後方互換不要のため削除しました。
+// ===== スナップショット解決用の共通管理 =====
+let latestResolutionSnapshotText: string | null = null;
+
+export function getResolutionSnapshotText(): string | null {
+  return latestResolutionSnapshotText;
+}
+
+export function setResolutionSnapshotText(text: string | null): void {
+  latestResolutionSnapshotText = (typeof text === 'string' && text.trim().length > 0) ? text : null;
+}
+
+export function invalidateResolutionSnapshot(): void {
+  latestResolutionSnapshotText = null;
+}
+
+export async function captureAndStoreSnapshot(page: Page): Promise<{ text: string; hash: string; url: string }> {
+  // ユーザー指示: 撮影前にキャッシュ（本モジュールの保持テキスト）を無効化してから取得
+  invalidateResolutionSnapshot();
+  const snaps = await takeSnapshots(page);
+  setResolutionSnapshotText(snaps.text);
+  return snaps;
+}
 
 // クリック専用の堅牢フォールバック（スクロール→関連label→force）
 export async function clickWithFallback(
@@ -133,10 +154,13 @@ export async function clickWithFallback(
   await locator.click({ force: true });
 }
 
-// ref → DOM ロケーター解決（データ属性/索引がなくてもスナップショットの序数と祖先ロールを用いた多段フォールバック）
+// ref → DOM ロケーター解決
+// ユーザー指示に基づき、操作直前に getSnapshotForAI を呼ばず、
+// 呼び出し側から渡されたスナップショットテキストのみを用いたフォールバックに限定する。
 export async function resolveLocatorByRef(
   page: Page,
   ref: string,
+  opts?: { resolutionSnapshotText?: string },
 ): Promise<Locator | null> {
   const t = getTimeoutMs('agent');
 
@@ -173,22 +197,11 @@ export async function resolveLocatorByRef(
     }
   } catch {}
 
-  // 2) スナップショットを用いた序数ベースの推定（祖先ロールも考慮）
-  let snapText: string | null = null;
-  try { snapText = await getSnapshotForAI(page); } catch {}
-  if (!snapText) {
-    // role/name が分かれば最終フォールバック
-    try {
-      const rn = findRoleAndNameByRef('', ref);
-      if (rn?.role) {
-        const loc = rn.name
-          ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
-          : page.getByRole(rn.role as any);
-        return loc.first();
-      }
-    } catch {}
-    return null;
-  }
+  // 2) 呼び出し側から渡されたスナップショットを用いた序数ベース推定
+  const snapText: string | null = (opts && typeof opts.resolutionSnapshotText === 'string')
+    ? opts.resolutionSnapshotText
+    : null;
+  if (!snapText) return null;
 
   // パース: 行単位にして ref を含む行を特定
   const lines = snapText.split(/\r?\n/);

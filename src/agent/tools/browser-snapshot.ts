@@ -1,17 +1,17 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, attachTodos } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, attachTodos } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 
 export async function browserSnapshot(): Promise<string> {
   try {
     const { page } = await ensureSharedBrowserStarted();
     try {
-      const snaps = await takeSnapshots(page);
+      const snaps = await captureAndStoreSnapshot(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       const payload = await attachTodos({ ok: true, action: 'snapshot', snapshots: { text: snaps.text, id: snapshotId } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
-      try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
+      try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'snapshot' };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);

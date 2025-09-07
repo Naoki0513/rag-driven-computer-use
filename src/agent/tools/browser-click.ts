@@ -1,6 +1,5 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
-import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -10,11 +9,12 @@ export async function browserClick(ref: string): Promise<string> {
     try {
       const t = getTimeoutMs('agent');
       // まずは ref から直接ロケーター解決（data-wg-ref / 索引 / 序数）
-      const el = await resolveLocatorByRef(page, ref);
+      const _snapForResolve = getResolutionSnapshotText();
+      const el = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
       if (!el) {
-        const snapText = await getSnapshotForAI(page);
-        const rn = findRoleAndNameByRef(snapText, ref);
-        if (!rn) throw new Error(`ref=${ref} に対応する要素が見つかりません (指定スナップショット)`);
+        const snapText = getResolutionSnapshotText();
+        const rn = snapText ? findRoleAndNameByRef(snapText, ref) : null;
+        if (!rn) throw new Error(`ref=${ref} に対応する要素が見つかりません`);
         const locator = rn.name
           ? page.getByRole(rn.role as any, { name: rn.name, exact: true } as any)
           : page.getByRole(rn.role as any);
@@ -22,7 +22,7 @@ export async function browserClick(ref: string): Promise<string> {
         await fallbackEl.waitFor({ state: 'visible', timeout: t });
         const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
         await clickWithFallback(page, fallbackEl, isCheckbox);
-        const snaps = await takeSnapshots(page);
+        const snaps = await captureAndStoreSnapshot(page);
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
         const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text, id: snapshotId } });
         return JSON.stringify(payload);
@@ -35,13 +35,13 @@ export async function browserClick(ref: string): Promise<string> {
         isCheckbox = String(roleAttr || '').toLowerCase() === 'checkbox';
       } catch {}
       await clickWithFallback(page, el, isCheckbox);
-      const snaps = await takeSnapshots(page);
+      const snaps = await captureAndStoreSnapshot(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { text: snaps.text, id: snapshotId } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
-      try { snaps = await takeSnapshots((await ensureSharedBrowserStarted()).page); } catch {}
+      try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'click', ref };
       if (snaps) {
         const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);

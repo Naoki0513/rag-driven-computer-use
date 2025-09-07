@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, attachTodos } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, attachTodos, setResolutionSnapshotText } from './util.js';
 import { createDriver, closeDriver } from '../../utilities/neo4j.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
 import type { Driver } from 'neo4j-driver';
@@ -70,7 +70,7 @@ LIMIT 1`;
       } catch (e: any) {
         const note = formatToolError(e);
         performed.push({ stage: 'navigate', ok: note });
-        const snaps = await takeSnapshots(page).catch(() => null as any);
+        const snaps = await captureAndStoreSnapshot(page).catch(() => null as any);
         let payload: any = { action: 'goto', targetId, navigateUrl, performed };
         if (snaps) {
           const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
@@ -82,7 +82,7 @@ LIMIT 1`;
 
       // 遷移直後に LoginPage ラベルのページであれば、自動ログインを一度だけ挿入
       try {
-        const preSnaps = await takeSnapshots(page);
+        const preSnaps = await captureAndStoreSnapshot(page);
         const currentId = await findPageIdByHashOrUrl(preSnaps.hash, preSnaps.url);
         if (currentId !== null) {
           const checkRes = await session.run(
@@ -143,7 +143,7 @@ LIMIT 1`;
         }
       }
 
-      const snaps = await takeSnapshots(page);
+      const snaps = await captureAndStoreSnapshot(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       const payload = await attachTodos({ action: 'goto', targetId, navigateUrl, clickSteps, performed, snapshots: { text: snaps.text, id: snapshotId } });
       return JSON.stringify(payload);

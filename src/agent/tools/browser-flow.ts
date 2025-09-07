@@ -1,6 +1,5 @@
-import { ensureSharedBrowserStarted, takeSnapshots, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
 import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
-import { getSnapshotForAI } from '../../utilities/snapshots.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -29,13 +28,13 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
   }
 
   try {
-      // 0) フロー開始前のスナップショットを1回だけ取得し、全 ref を事前解決
-      const initialSnapshotText = await getSnapshotForAI(page);
+      // 0) 事前解決は保持されている最新スナップショットから行う（操作前の取得はしない）
+      const initialSnapshotText = getResolutionSnapshotText();
       const preResolvedByRef = new Map<string, { role: string; name?: string }>();
       for (const s of steps) {
         const ref = String(s?.ref ?? '').trim();
         if (ref && !preResolvedByRef.has(ref)) {
-          const rn = findRoleAndNameByRef(initialSnapshotText, ref);
+          const rn = initialSnapshotText ? findRoleAndNameByRef(initialSnapshotText, ref) : null;
           if (rn) preResolvedByRef.set(ref, rn);
         }
       }
@@ -66,7 +65,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
             // 1) ref 直接解決（data-wg-ref / 索引 / 序数）
             if (!resolved && ref) {
               try {
-                const byRef = await resolveLocatorByRef(page, ref);
+                const _snapForResolve = getResolutionSnapshotText();
+                const byRef = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
                 if (byRef) {
                   await byRef.waitFor({ state: 'visible', timeout: t });
                   await byRef.fill(text);
@@ -103,7 +103,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
             // 1) ref 直接解決
             if (!resolved && ref) {
               try {
-                const byRef = await resolveLocatorByRef(page, ref);
+                const _snapForResolve = getResolutionSnapshotText();
+                const byRef = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
                 if (byRef) {
                   const el = byRef;
                   await el.waitFor({ state: 'visible', timeout: t });
@@ -160,7 +161,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
               // 1) ref 直接解決
               if (!resolved && ref) {
                 try {
-                  const byRef = await resolveLocatorByRef(page, ref);
+                  const _snapForResolve = getResolutionSnapshotText();
+                  const byRef = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
                   if (byRef) {
                     await byRef.waitFor({ state: 'visible', timeout: t });
                     await byRef.press(key || 'Enter');
@@ -216,7 +218,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         }
       }
 
-      const snaps = await takeSnapshots(page);
+      const snaps = await captureAndStoreSnapshot(page);
       const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       const payload = await attachTodos({
         action: 'browser_flow',
