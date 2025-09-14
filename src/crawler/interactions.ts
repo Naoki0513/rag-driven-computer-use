@@ -11,7 +11,13 @@ function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null 
 }
 
 async function waitForAppReady(page: Page): Promise<void> {
-  await page.waitForLoadState('networkidle', { timeout: getTimeoutMs('crawler') as any });
+  const t = getTimeoutMs('crawler') as any;
+  try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
+  try { await page.waitForLoadState('load', { timeout: Math.min(Number(t) || 0, 10000) }); } catch {}
+  try {
+    await page.waitForSelector('.sidebar, .main-content, .rc-room, a[href], button', { state: 'attached', timeout: Math.min(Number(t) || 0, 5000) });
+  } catch {}
+  try { await page.waitForTimeout(500); } catch {}
 }
 
 async function capture(page: Page): Promise<NodeState> {
@@ -70,7 +76,7 @@ export async function processInteraction(
   context: BrowserContext,
   fromNode: NodeState,
   interaction: Interaction,
-  config: { parallelTasks: number; targetUrl: string; visitedHashes?: Set<string>; triedActions?: Set<string> }
+  config: { parallelTasks: number; targetUrl: string; visitedHashes?: Set<string>; triedActions?: Set<string>; visitedUrls?: Set<string> }
 ): Promise<NodeState | null> {
   if (!context || (typeof (context as any).isClosed === 'function' && (context as any).isClosed())) return null;
   let newPage: Page | null = null;
@@ -102,13 +108,18 @@ export async function processInteraction(
       try {
         const targetUrl = normalizeUrl(new URL(hrefCandidate, fromUrl).toString());
         if (isInternalLink(targetUrl, config.targetUrl)) {
+          if (config.visitedUrls && config.visitedUrls.has(targetUrl)) {
+            console.info(`[processInteraction] skip due to duplicate URL -> ${targetUrl}`);
+            return null;
+          }
           const key = `nav:href:${fromNode.snapshotHash}:${targetUrl}`;
           if (!config.triedActions.has(key)) {
             config.triedActions.add(key);
             console.info(`[processInteraction] primary href navigation -> ${targetUrl}`);
             interaction.href = targetUrl;
             interaction.actionType = 'navigate';
-            await newPage.goto(targetUrl, { waitUntil: 'networkidle', timeout: getTimeoutMs('crawler') });
+            await newPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: getTimeoutMs('crawler') });
+            await waitForAppReady(newPage);
             const newNode = await capture(newPage);
             // 既知スナップショットでも上位でリレーション作成できるように常に返す
             return newNode;

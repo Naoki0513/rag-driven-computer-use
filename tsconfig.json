@@ -44,4 +44,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
   }
+  ,
+  "exclude": [
+    "src/agent/**",
+    "dist/**"
+  ]
 }
