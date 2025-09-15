@@ -130,6 +130,11 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     addUrlsToMapFromSnapshot(discoveredByKey, node, config.targetUrl, handleDiscovered);
     discoveredByKey.set(canonicalUrlKey(node.url), normalizeUrl(node.url));
     try { await config.onBaseCapture?.(await captureNode(page, { depth: 0 })); } catch {}
+    // 初期ベース到達時点での discovered を出力
+    try {
+      console.info(`[discovered progress] ctx=initial base=${normalizeUrl(config.targetUrl)} total=${discoveredByKey.size}`);
+      for (const u of Array.from(new Set(discoveredByKey.values())).sort()) console.info(`DISCOVERED: ${u}`);
+    } catch {}
     // ここでは早期終了しない（CSV 書き込み上限は main 側で制御）
 
     // ページ内クリックでの増分も加える
@@ -168,6 +173,11 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
         // ベース切替のスナップショットをCSVへ
         try { await config.onBaseCapture?.(await captureNode(page, { depth: 0 })); } catch {}
         addUrlsToMapFromSnapshot(discoveredByKey, n, config.targetUrl, handleDiscovered);
+        // 規定URLの切り替わり（currentUrl）ごとに discovered を出力
+        try {
+          console.info(`[discovered progress] ctx=base-switch url=${normalizeUrl(currentUrl)} total=${discoveredByKey.size}`);
+          for (const u of Array.from(new Set(discoveredByKey.values())).sort()) console.info(`DISCOVERED: ${u}`);
+        } catch {}
 
         const baseSet = new Set<string>(Array.from(discoveredByKey.values()));
         const elemSet = extractClickableElementSigs(n.snapshotForAI);

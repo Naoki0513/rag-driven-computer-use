@@ -76,11 +76,21 @@ async function main() {
       return [] as string[];
     });
     for (const u of collected) unionAll.add(u);
+    // 進捗ログ: 現時点の unionAll をすべて表示
+    try {
+      console.info(`[discovered(total) progress] total=${unionAll.size}`);
+      for (const u of Array.from(unionAll).sort()) console.info(`DISCOVERED: ${u}`);
+    } catch {}
     // 収集は継続。CSV の新規書込みは onBaseCapture で制御
     if (typeof maxUrls === 'number' && fullWritten.size >= maxUrls) break;
   }
 
-  try { console.info(`[CSV] completed. rows(full)=${fullWritten.size} discovered(total)=${unionAll.size}`); } catch {}
+  try {
+    console.info(`[CSV] completed. rows(full)=${fullWritten.size} discovered(total)=${unionAll.size}`);
+    // 完了ログ: 最終的な unionAll をすべて表示
+    console.info(`[discovered(total) final] total=${unionAll.size}`);
+    for (const u of Array.from(unionAll).sort()) console.info(`DISCOVERED: ${u}`);
+  } catch {}
   await csv.close();
 }
 
