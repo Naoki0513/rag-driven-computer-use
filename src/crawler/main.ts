@@ -18,6 +18,7 @@ async function main() {
     headful: toBool(env.CRAWLER_HEADFUL, false),
     csvPath: outputFileEnv || 'output/crawl.csv',
     clearCsv: toBool(env.CRAWLER_CLEAR_CSV, false),
+    dedupeElementsPerBase: toBool(env.CRAWLER_DEDUPE_ELEMENTS_PER_BASE, false),
   } as const;
 
   const targetsEnv = (env.CRAWLER_TARGET_URLS || '').trim();
@@ -66,6 +67,7 @@ async function main() {
       loginUser: config.loginUser,
       loginPass: config.loginPass,
       headful: !!config.headful,
+      dedupeElementsPerBase: !!config.dedupeElementsPerBase,
       onDiscovered,
       onBaseCapture,
       shouldStop: () => (typeof maxUrls === 'number' ? fullWritten.size >= maxUrls : false),

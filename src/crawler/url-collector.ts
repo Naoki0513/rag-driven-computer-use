@@ -18,6 +18,8 @@ type CollectorConfig = {
   maxUrls?: number;
   onDiscovered?: (url: string) => Promise<void> | void;
   onBaseCapture?: (node: NodeState) => Promise<void> | void;
+  // true の場合、クリック要素の重複排除集合を基底URLごとにリセットする
+  dedupeElementsPerBase?: boolean;
 };
 
 export async function collectUrlsFromInitialPage(config: CollectorConfig): Promise<string[]> {
@@ -93,7 +95,8 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
 // - クリック対象のグローバル重複（role|name）も排除
 export async function collectAllInternalUrls(config: CollectorConfig & { shouldStop?: () => boolean }): Promise<string[]> {
   const discoveredByKey = new Map<string, string>(); // canonicalKey -> normalizedUrl
-  const globalElemSigs = new Set<string>();
+  // グローバル重複排除（既定）か、基底URLごとの重複排除かを切り替え
+  const globalElemSigs = config.dedupeElementsPerBase ? undefined : new Set<string>();
   // CSV への書き込み件数上限は main 側で制御するため、ここでは max を用いた早期終了は行わない
 
   const browser = await chromium.launch({ headless: !config.headful });
@@ -142,7 +145,9 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     const baseElemSet = extractClickableElementSigs(node.snapshotForAI);
     const clickCfg: any = { targetUrl: config.targetUrl };
     clickCfg.onDiscovered = handleDiscovered;
-    await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, config.targetUrl, ['ROOT'], 0, null, globalElemSigs, { ...clickCfg, shouldStop: config.shouldStop })
+    // 基底URLごとに要素重複排除集合をリセットする場合は新しい Set を渡す
+    const elemDeduperInitial = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
+    await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, config.targetUrl, ['ROOT'], 0, null, elemDeduperInitial, { ...clickCfg, shouldStop: config.shouldStop })
       .catch(() => {});
     // clickPointerAndCollect 後、念のため再スナップショットからも抽出
     const after = await capture(page);
@@ -183,7 +188,9 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
         const elemSet = extractClickableElementSigs(n.snapshotForAI);
         const clickCfg2: any = { targetUrl: config.targetUrl };
         clickCfg2.onDiscovered = handleDiscovered;
-        await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, config.targetUrl, ['ROOT', currentUrl], 0, null, globalElemSigs, { ...clickCfg2, shouldStop: config.shouldStop })
+        // 基底URLが切り替わるたびに要素重複排除集合をリセット（フラグが true の場合）
+        const elemDeduperPerBase = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
+        await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, config.targetUrl, ['ROOT', currentUrl], 0, null, elemDeduperPerBase, { ...clickCfg2, shouldStop: config.shouldStop })
           .catch(() => {});
         // click後の再スナップショットで増分
         const n2 = await capture(page);

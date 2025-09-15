@@ -1,5 +1,4 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
-import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -219,13 +218,12 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
       }
 
       const snaps = await captureAndStoreSnapshot(page);
-      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
       const payload = await attachTodos({
         action: 'browser_flow',
         selected: {},
         navigation: {},
         performed,
-        snapshots: { text: snaps.text, id: snapshotId },
+        snapshots: { text: snaps.text },
       });
       return JSON.stringify(payload);
   } catch (e: any) {

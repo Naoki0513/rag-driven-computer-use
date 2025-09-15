@@ -90,12 +90,10 @@ function buildModelCandidates(): ModelCandidate[] {
 }
 
 export async function runSingleQuery(query: string): Promise<void> {
-  console.log('WebGraph-Agent Cypher AI エージェントを起動しています...');
-  // Neo4j接続情報チェック（実接続は schema.ts/ツールで行う）
-  const { AGENT_NEO4J_URI, AGENT_NEO4J_USER, AGENT_NEO4J_PASSWORD } = process.env as any;
-  if (!AGENT_NEO4J_URI || !AGENT_NEO4J_USER || !AGENT_NEO4J_PASSWORD) {
-    throw new Error('AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD が未設定です (.env を確認)');
-  }
+  console.log('WebGraph-Agent DuckDB/CSV AI エージェントを起動しています...');
+  // CSV パスのチェック
+  const csvPath = String(process.env.AGENT_CSV_PATH || '').trim() || 'output/crawl.csv';
+  console.log(`[Env] CSV Path = ${csvPath}`);
   const candidates = buildModelCandidates();
   console.log(`[OK] 実行環境チェックに成功しました。モデル候補数=${candidates.length}`);
 
@@ -106,9 +104,9 @@ export async function runSingleQuery(query: string): Promise<void> {
   // まず最初にブラウザを起動（以降の実行で共有・再利用）
   await ensureSharedBrowserStarted();
   try {
-    console.log('データベーススキーマを取得中...');
+    console.log('CSVスキーマを取得中...');
     const schema = await getDatabaseSchemaString();
-    console.log('[OK] データベーススキーマを取得しました');
+    console.log('[OK] CSVスキーマを取得しました');
 
     const systemPrompt = createSystemPromptWithSchema(schema);
     console.log(`\n実行中のクエリ: ${query}`);

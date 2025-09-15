@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
-import { runCypher } from './tools/run-cypher.js';
+import { runQuery } from './tools/run-query.js';
 import { keywordSearch } from './tools/keyword-search.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
@@ -211,12 +211,12 @@ export async function converseLoop(
             console.log(`Tool result (browser_snapshot): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
-        } else if (name === 'run_cypher') {
+        } else if (name === 'run_query') {
           const q = (toolUse as any).input?.query ?? '';
           parallelTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: run_cypher with input: ${JSON.stringify({ query: q })}`);
-            const result = await runCypher(String(q));
-            console.log(`Tool result (run_cypher): ${result}`);
+            console.log(`Calling tool: run_query with input: ${JSON.stringify({ query: q })}`);
+            const result = await runQuery(String(q));
+            console.log(`Tool result (run_query): ${result}`);
             return result;
           }});
         } else if (name === 'keyword_search') {
@@ -236,10 +236,10 @@ export async function converseLoop(
             return result;
           }});
         } else if (name === 'browser_goto') {
-          const targetId = Number((toolUse as any).input?.targetId ?? 0);
+          const url = String((toolUse as any).input?.url ?? '');
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ targetId })}`);
-            const result = await browserGoto(Number(targetId));
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url })}`);
+            const result = await browserGoto(String(url));
             console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});

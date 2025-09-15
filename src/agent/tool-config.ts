@@ -16,6 +16,8 @@ export function buildToolConfig(): ToolConfiguration {
           }
         }
       },
+      // keyword_search は上段で定義済み
+      // run_query は下段に1つだけ定義します
       {
         toolSpec: {
           name: 'browser_flow',
@@ -75,20 +77,20 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_goto',
-          description: '内部ID(id(n))で指定したPageに、NAVIGATE_TO→CLICK_TO最短経路で到達します（実行後のスナップショットを返却）',
+          description: '指定したURLへ直接遷移します（実行後のスナップショットを返却）',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { targetId: { type: 'number' } },
-              required: ['targetId'],
+              properties: { url: { type: 'string' } },
+              required: ['url'],
             },
           },
         },
       },
       {
         toolSpec: {
-          name: 'run_cypher',
-          description: 'Neo4jデータベースに対してCypherクエリを実行します',
+          name: 'run_query',
+          description: 'DuckDBに対してSQLを実行します（CSV: pages ビューに対するクエリ）',
           inputSchema: {
             json: {
               type: 'object',
@@ -101,7 +103,7 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'keyword_search',
-          description: '各ページの Markdown テキスト(snapshot_in_md)に対して、与えた keywords の全語を AND 条件で検索し、関連しそうな Page を最大3件返します（id(p), snapshot_in_md, depth, url）。到達したいページを見つけて id を取得するためのツールです。',
+          description: 'CSV (pages) のスナップショットテキストに対して keywords のAND検索を行い、関連URLを最大3件返します。',
           inputSchema: {
             json: {
               type: 'object',

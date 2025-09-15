@@ -1,5 +1,4 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, attachTodos } from './util.js';
-import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
 export async function browserLogin(url: string): Promise<string> {
@@ -87,16 +86,14 @@ export async function browserLogin(url: string): Promise<string> {
 
       await page.waitForLoadState('networkidle', { timeout: t });
       const snaps = await captureAndStoreSnapshot(page);
-      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      const payload = await attachTodos({ ok: true, action: 'login', url, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'login', url, snapshots: { text: snaps.text } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'login', url };
       if (snaps) {
-        const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-        payload.snapshots = { text: snaps.text, id: snapshotId };
+        payload.snapshots = { text: snaps.text };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

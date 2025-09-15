@@ -1,5 +1,4 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
-import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -23,8 +22,7 @@ export async function browserClick(ref: string): Promise<string> {
         const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
         await clickWithFallback(page, fallbackEl, isCheckbox);
         const snaps = await captureAndStoreSnapshot(page);
-        const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text, id: snapshotId } });
+        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text } });
         return JSON.stringify(payload);
       }
       await el.waitFor({ state: 'visible', timeout: t });
@@ -36,16 +34,14 @@ export async function browserClick(ref: string): Promise<string> {
       } catch {}
       await clickWithFallback(page, el, isCheckbox);
       const snaps = await captureAndStoreSnapshot(page);
-      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { text: snaps.text } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'click', ref };
       if (snaps) {
-        const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-        payload.snapshots = { text: snaps.text, id: snapshotId };
+        payload.snapshots = { text: snaps.text };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

@@ -1,5 +1,4 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
-import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -21,23 +20,20 @@ export async function browserInput(ref: string, text: string): Promise<string> {
         await fallback.waitFor({ state: 'visible', timeout: t });
         await fallback.fill(text);
         const snaps0 = await captureAndStoreSnapshot(page);
-        const snapshotId0 = await findPageIdByHashOrUrl(snaps0.hash, snaps0.url);
-        const payload0 = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps0.text, id: snapshotId0 } });
+        const payload0 = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps0.text } });
         return JSON.stringify(payload0);
       }
       await loc.waitFor({ state: 'visible', timeout: t });
       await loc.fill(text);
       const snaps = await captureAndStoreSnapshot(page);
-      const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-      const payload = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps.text, id: snapshotId } });
+      const payload = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { text: snaps.text } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'input', ref, text };
       if (snaps) {
-        const snapshotId = await findPageIdByHashOrUrl(snaps.hash, snaps.url);
-        payload.snapshots = { text: snaps.text, id: snapshotId };
+        payload.snapshots = { text: snaps.text };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

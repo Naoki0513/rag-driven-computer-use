@@ -1,51 +1,37 @@
-import type { Driver } from 'neo4j-driver';
-import { createDriver, closeDriver } from '../neo4j.js';
 import { attachTodos } from './util.js';
+import { queryAll } from '../duckdb.js';
 
-// keyword_search: 各ページをテキスト化した Markdown（snapshot_in_md）を対象に、
-// 与えられたキーワード配列を AND 条件で検索し、関連しそうな Page を最大3件返す。
-// 目的は「たどり着きたいページを見つけて id(p) を取得する」こと。
+// keyword_search: CSVのスナップショット列（"snapshotin MD"/"snapshotfor AI"）を AND 条件で検索し、関連URLを最大3件返す
 export async function keywordSearch(keywords: string[]): Promise<string> {
   try {
-    const uri = process.env.AGENT_NEO4J_URI;
-    const user = process.env.AGENT_NEO4J_USER;
-    const password = process.env.AGENT_NEO4J_PASSWORD;
-    if (!uri || !user || !password) {
-      const payload = await attachTodos({ ok: false, error: 'エラー: Neo4j接続情報(AGENT_NEO4J_URI/AGENT_NEO4J_USER/AGENT_NEO4J_PASSWORD)が未設定です' });
-      return JSON.stringify(payload);
-    }
-
-    const list = Array.isArray(keywords) ? keywords.filter((k) => typeof k === 'string' && k.trim().length > 0) : [];
+    const list = Array.isArray(keywords)
+      ? keywords.map((k) => String(k || '').trim()).filter((k) => k.length > 0)
+      : [];
     if (!list.length) {
       const payload = await attachTodos({ ok: false, error: 'エラー: keywords が空です' });
       return JSON.stringify(payload);
     }
 
-    let driver: Driver | null = null;
-    driver = await createDriver(uri, user, password);
-    const session = driver.session();
-    try {
-      const cypher = `
-WITH $keywords AS kws
-MATCH (p:Page)
-WHERE all(k IN kws WHERE toLower(p.snapshot_in_md) CONTAINS toLower(k))
-RETURN id(p) AS id, p.snapshot_in_md AS snapshot_in_md, p.depth AS depth, p.url AS url
-ORDER BY id ASC
+    // DuckDB: スナップショット列を連結して検索
+    const conditions = list.map(() => "position(? in text) > 0").join(' AND ');
+    const sql = `
+WITH t AS (
+  SELECT "URL" AS url,
+         lower(coalesce("snapshotin MD", '') || ' ' || coalesce("snapshotfor AI", '')) AS text
+  FROM pages
+)
+SELECT url
+FROM t
+WHERE ${conditions}
 LIMIT 3`;
-      const res = await session.run(cypher, { keywords: list });
-      const records = res.records.map((r) => r.toObject());
-      if (!records.length) {
-        const payload = await attachTodos({ ok: true, result: '結果: 対象ページが見つかりませんでした' });
-        return JSON.stringify(payload);
-      }
-      const lines: string[] = [];
-      records.forEach((rec, i) => lines.push(`レコード ${i + 1}: ${JSON.stringify(rec)}`));
-      const payload = await attachTodos({ ok: true, result: lines.join('\n') });
+    const rows = await queryAll<{ url: string }>(sql, list.map((k) => k.toLowerCase()));
+    if (!rows.length) {
+      const payload = await attachTodos({ ok: true, result: '結果: 対象URLが見つかりませんでした' });
       return JSON.stringify(payload);
-    } finally {
-      await session.close();
-      await closeDriver(driver);
     }
+    const lines: string[] = rows.map((r, i) => `URL ${i + 1}: ${r.url}`);
+    const payload = await attachTodos({ ok: true, result: lines.join('\n') });
+    return JSON.stringify(payload);
   } catch (e: any) {
     const payload = await attachTodos({ ok: false, error: `エラー: ${String(e?.message ?? e)}` });
     return JSON.stringify(payload);
