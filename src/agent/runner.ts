@@ -2,7 +2,7 @@ import { converseLoop } from './converse.js';
 import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
 import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools/util.js';
-import { startSessionTrace } from '../utilities/observability.js';
+import { startSessionTrace } from './observability.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 

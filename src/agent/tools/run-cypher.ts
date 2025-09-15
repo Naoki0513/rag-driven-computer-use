@@ -1,5 +1,5 @@
 import type { Driver } from 'neo4j-driver';
-import { createDriver, closeDriver } from '../../utilities/neo4j.js';
+import { createDriver, closeDriver } from '../neo4j.js';
 import { attachTodos } from './util.js';
 
 export async function runCypher(query: string): Promise<string> {

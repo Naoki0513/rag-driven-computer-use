@@ -1,5 +1,5 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
-import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
+import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 

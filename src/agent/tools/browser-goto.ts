@@ -1,6 +1,5 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, attachTodos, setResolutionSnapshotText } from './util.js';
-import { createDriver, closeDriver } from '../../utilities/neo4j.js';
-import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
+import { createDriver, closeDriver, findPageIdByHashOrUrl } from '../neo4j.js';
 import type { Driver } from 'neo4j-driver';
 import { browserLogin } from './browser-login.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';

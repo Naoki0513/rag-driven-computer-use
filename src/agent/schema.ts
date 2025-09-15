@@ -1,5 +1,5 @@
 import type { Driver } from 'neo4j-driver';
-import { createDriver, closeDriver } from '../utilities/neo4j.js';
+import { createDriver, closeDriver } from './neo4j.js';
 
 async function queryAll<T = any>(driver: Driver, cypher: string): Promise<T[]> {
   const session = driver.session();

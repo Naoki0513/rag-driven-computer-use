@@ -1,5 +1,5 @@
 import type { Driver } from 'neo4j-driver';
-import { createDriver, closeDriver } from '../../utilities/neo4j.js';
+import { createDriver, closeDriver } from '../neo4j.js';
 import { attachTodos } from './util.js';
 
 // keyword_search: 各ページをテキスト化した Markdown（snapshot_in_md）を対象に、

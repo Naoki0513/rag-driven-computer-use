@@ -1,79 +1,33 @@
 import 'dotenv/config';
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
-import { chromium } from 'playwright';
-import { collectAllInternalUrls, login } from './url-collector.js';
-import { CsvWriter } from '../utilities/csv.js';
-import { getTimeoutMs } from '../utilities/timeout.js';
+import { collectAllInternalUrls } from './url-collector.js';
+import { CsvWriter } from './csv.js';
 import { captureNode } from '../utilities/snapshots.js';
+import { normalizeUrl } from '../utilities/url.js';
 
 async function main() {
   try { (process.stdout as any).on?.('error', () => {}); } catch {}
   try { (process.stderr as any).on?.('error', () => {}); } catch {}
-  // CLIオプションは廃止。ヘルプや引数は読み取らず、.env からのみ設定を取得
-  yargs(hideBin(process.argv)).help(false).parseSync();
 
   const env = process.env;
   const toBool = (v: any, def: boolean) => (v === undefined ? def : String(v).toLowerCase() === 'true');
-  const toInt = (v: any, def: number) => {
-    const n = v === undefined ? def : Number(v);
-    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : def;
-  };
+  const outputFileEnv = (env.CRAWLER_OUTPUT_FILE ?? env.CRAWLER_CSV_PATH ?? '').toString().trim();
 
   const config = {
-    targetUrl: env.CRAWLER_TARGET_URL ?? 'http://the-agent-company.com:3000/',
-    loginUrl: env.CRAWLER_LOGIN_URL ?? undefined,
     loginUser: env.CRAWLER_LOGIN_USER ?? 'theagentcompany',
     loginPass: env.CRAWLER_LOGIN_PASS ?? 'theagentcompany',
-
-    maxStates: toInt(env.CRAWLER_MAX_STATES, 10000),
-    maxDepth: toInt(env.CRAWLER_MAX_DEPTH, 20),
-    parallelTasks: toInt(env.CRAWLER_PARALLEL_TASKS, 8),
-
     headful: toBool(env.CRAWLER_HEADFUL, false),
-    exhaustive: toBool(env.CRAWLER_EXHAUSTIVE, false),
-
-    csvPath: env.CRAWLER_CSV_PATH || 'output/crawl.csv',
+    csvPath: outputFileEnv || 'output/crawl.csv',
     clearCsv: toBool(env.CRAWLER_CLEAR_CSV, false),
-
-    // 新フロー: 環境変数で URL 収集のみを選択可能
-    collectUrlsOnly: toBool(env.CRAWLER_URLS_ONLY, false),
-    urlsOutJsonPath: env.CRAWLER_URLS_OUT_JSON || 'output/urls.json',
-    urlsOutTxtPath: env.CRAWLER_URLS_OUT_TXT || 'output/urls.txt',
-  } as any;
+  } as const;
 
   const targetsEnv = (env.CRAWLER_TARGET_URLS || '').trim();
   const maxUrlsEnv = Number(env.CRAWLER_MAX_URLS ?? '');
   const maxUrls = Number.isFinite(maxUrlsEnv) && maxUrlsEnv > 0 ? Math.trunc(maxUrlsEnv) : undefined;
   const targetUrls: string[] = targetsEnv
     ? targetsEnv.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
-    : [config.targetUrl];
+    : ['http://the-agent-company.com:3000/'];
 
-  // 1) 指定された各ベースURLごとにBFS収集し、逐次 urls.json/txt へ反映
-  const unionAll = new Set<string>();
-  for (const base of targetUrls) {
-    const cfg: any = {
-      targetUrl: base,
-      loginUrl: config.loginUrl,
-      loginUser: config.loginUser,
-      loginPass: config.loginPass,
-      headful: !!config.headful,
-      urlsOutJsonPath: config.urlsOutJsonPath,
-      urlsOutTxtPath: config.urlsOutTxtPath,
-    };
-    if (typeof maxUrls === 'number') cfg.maxUrls = maxUrls;
-    const collected = await collectAllInternalUrls(cfg).catch(() => [] as string[]);
-    for (const u of collected) unionAll.add(u);
-    if (maxUrls && unionAll.size >= maxUrls) break;
-  }
-
-  // 2) URLのみ収集モードの場合はここで終了
-  if (config.collectUrlsOnly) {
-    try { console.info(`[URLs-ONLY] collected=${unionAll.size}`); } catch {}
-    return;
-  }
-
-  // 3) 収集済みすべてのURLを対象にスナップショットを取得してCSVへ逐次出力
+  // CSV: 常に出力（URLのみモードは廃止）
   const csv = new CsvWriter(config.csvPath || 'output/crawl.csv', [
     'URL',
     'id',
@@ -84,33 +38,49 @@ async function main() {
   ], { clear: !!config.clearCsv });
   await csv.initialize();
 
-  const browser = await chromium.launch({ headless: !config.headful });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  try { page.setDefaultTimeout(getTimeoutMs('crawler')); } catch {}
-  try { page.setDefaultNavigationTimeout(getTimeoutMs('crawler')); } catch {}
+  // URL発見時・ベースURL訪問時のCSV出力を callbacks で実現
+  const fullWritten = new Set<string>();
 
-  // 一度ログイン（セッション共有）
-  await page.goto(config.loginUrl || config.targetUrl, { waitUntil: 'domcontentloaded', timeout: getTimeoutMs('crawler') }).catch(() => {});
-  await login(page, config).catch(() => {});
+  const onDiscovered = async (_url: string) => {
+    // プレースホルダー書き込みは廃止（フル行のみ書き込み）
+  };
 
-  let successCount = 0;
-  for (const url of Array.from(unionAll.values())) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: getTimeoutMs('crawler') });
-      const node = await captureNode(page, { depth: 0 });
-      await csv.appendNode(node);
-      successCount += 1;
-      try { console.info(`[CSV] appended -> ${url}`); } catch {}
-    } catch (e) {
-      try { console.warn(`[CSV] failed to capture ${url}: ${String((e as any)?.message ?? e)}`); } catch {}
+  const onBaseCapture = async (node: Awaited<ReturnType<typeof captureNode>>) => {
+    const u = normalizeUrl(node.url);
+    if (fullWritten.has(u)) return;
+    // CRAWLER_MAX_URLS を CSV フル行の件数上限として適用
+    if (typeof maxUrls === 'number' && fullWritten.size >= maxUrls) {
+      try { console.info(`[CSV] skip (reached maxUrls=${maxUrls}) -> ${u}`); } catch {}
+      return;
     }
-  }
-  try { console.info(`[CSV] completed. rows=${successCount}`); } catch {}
+    await csv.appendNode(node);
+    fullWritten.add(u);
+    try { console.info(`[CSV] base captured -> ${u}`); } catch {}
+  };
 
-  try { await page.close(); } catch {}
-  try { await context.close(); } catch {}
-  try { await browser.close(); } catch {}
+  // 各ベースURLで BFS し、callbacks 内で逐次 CSV を執筆
+  const unionAll = new Set<string>();
+  for (const base of targetUrls) {
+    const cfg: any = {
+      targetUrl: base,
+      loginUser: config.loginUser,
+      loginPass: config.loginPass,
+      headful: !!config.headful,
+      onDiscovered,
+      onBaseCapture,
+      shouldStop: () => (typeof maxUrls === 'number' ? fullWritten.size >= maxUrls : false),
+    };
+    // url-collector 側へ maxUrls は渡さない（収集は継続し、CSV 書込みのみ本ファイルで制御）
+    const collected = await collectAllInternalUrls(cfg).catch((e) => {
+      try { console.warn(`[crawler] collect error for base=${base}: ${String((e as any)?.message ?? e)}`); } catch {}
+      return [] as string[];
+    });
+    for (const u of collected) unionAll.add(u);
+    // 収集は継続。CSV の新規書込みは onBaseCapture で制御
+    if (typeof maxUrls === 'number' && fullWritten.size >= maxUrls) break;
+  }
+
+  try { console.info(`[CSV] completed. rows(full)=${fullWritten.size} discovered(total)=${unionAll.size}`); } catch {}
   await csv.close();
 }
 

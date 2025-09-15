@@ -1,5 +1,5 @@
 import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, attachTodos } from './util.js';
-import { findPageIdByHashOrUrl } from '../../utilities/neo4j.js';
+import { findPageIdByHashOrUrl } from '../neo4j.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
 export async function browserLogin(url: string): Promise<string> {

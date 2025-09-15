@@ -1,7 +1,3 @@
-/*
-  Langfuse 観測ユーティリティ（安全な no-op 実装）
-  - 環境変数未設定時は初期化しない
-*/
 import { Langfuse } from 'langfuse';
 
 let _langfuse: Langfuse | null = null;
@@ -80,7 +76,6 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
     } catch {}
     if (typeof payload?.outputText === 'string') meta.outputText = payload.outputText;
     const body = {
-      // 常に生レスポンス全文を送信（テキストは metadata に併記）
       output: payload.response ?? null,
       usage: payload.usage ?? undefined,
       metadata: Object.keys(meta).length ? meta : undefined,
@@ -88,7 +83,6 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
     if (typeof gen.end === 'function') gen.end(body);
     else if (typeof gen.update === 'function') gen.update(body);
   } catch (_e) {
-    // no-op
   }
 }
 
@@ -105,7 +99,6 @@ export function recordBedrockCallError(handle: BedrockCallHandle, error: unknown
     if (typeof gen.end === 'function') gen.end(body);
     else if (typeof gen.update === 'function') gen.update(body);
   } catch (_e) {
-    // no-op
   }
 }
 
@@ -116,8 +109,8 @@ export async function flushObservability(): Promise<void> {
     if (typeof client.flushAsync === 'function') await client.flushAsync();
     if (typeof client.shutdownAsync === 'function') await client.shutdownAsync();
   } catch {
-    // no-op
   }
 }
+
 
 

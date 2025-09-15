@@ -17,7 +17,7 @@ import { browserFlow } from './tools/browser-flow.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
 import { todoTool } from './tools/todo.js';
 import type { ToolUseInput } from './tools/types.js';
-import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from '../utilities/observability.js';
+import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
 export type ConverseLoopResult = {
   fullText: string;

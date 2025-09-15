@@ -1,6 +1,6 @@
 import neo4j, { Driver } from 'neo4j-driver';
-import type { NodeState, Interaction } from './types.js';
-import { extractRefIdFromSnapshot } from './text.js';
+import type { NodeState, Interaction } from '../utilities/types.js';
+import { extractRefIdFromSnapshot } from '../utilities/text.js';
 
 export async function createDriver(uri: string, user: string, password: string): Promise<Driver> {
   return neo4j.driver(uri, neo4j.auth.basic(user, password), { disableLosslessIntegers: true });
@@ -202,5 +202,6 @@ export async function createRelation(
     await session.close();
   }
 }
+
 
 
