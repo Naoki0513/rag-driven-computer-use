@@ -237,9 +237,12 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_goto') {
           const url = String((toolUse as any).input?.url ?? '');
+          const autoLogin = (toolUse as any).input?.autoLogin;
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ url })}`);
-            const result = await browserGoto(String(url));
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, autoLogin })}`);
+            const opts: { autoLogin?: boolean } = {};
+            if (typeof autoLogin === 'boolean') opts.autoLogin = autoLogin;
+            const result = await browserGoto(String(url), opts);
             console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});

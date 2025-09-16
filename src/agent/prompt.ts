@@ -11,8 +11,7 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
 - ユーザー要求を満たす具体的なブラウザ操作を計画し、実行し、ToDo をすべて完了させる。
 
 [データ基盤]
-- 本エージェントは Neo4j は使用しない。CSV (pages ビュー) を DuckDB でクエリする。
-- 代表的な列: URL, site, snapshotfor AI, snapshotin MD, timestamp など。
+- 代表的な列: URL, site, snapshotfor AI, snapshotin MD, timestamp。
 
 [フェーズ構成]
 1) PLAN（計画）

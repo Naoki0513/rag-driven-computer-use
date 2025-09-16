@@ -81,7 +81,10 @@ export function buildToolConfig(): ToolConfiguration {
           inputSchema: {
             json: {
               type: 'object',
-              properties: { url: { type: 'string' } },
+              properties: {
+                url: { type: 'string' },
+                autoLogin: { type: 'boolean', description: 'true の場合、今回の goto でログイン試行する（未指定時は初回のみ自動）' }
+              },
               required: ['url'],
             },
           },
