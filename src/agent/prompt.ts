@@ -16,8 +16,8 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
 [フェーズ構成]
 1) PLAN（計画）
   - 入力解析: ユーザー要求から重要語を抽出し正規化。
-  - 情報収集: まず keyword_search でスナップショットテキストを AND 検索して候補URLを得る。必要に応じて run_query で追加調査。
-    * keyword_search: {"keywords": ["語1", "語2", ...]} （全語 AND、最大3件URL）
+  - 情報収集: まず url_search を使い、クエリに対して Cohere Rerank 3.5 によるリランクで候補を得る（URL列Top5 / snapshotin MDチャンクTop5）。必要に応じて run_query で追加調査。
+    * url_search: {"query": "検索クエリ"}
     * run_query: {"query": "SELECT ... FROM pages WHERE ..."}
   - 対象URLの決定: 候補URLの中から到達すべき URL を暫定選定。
   - 実行計画の具体化: ページ内で行う操作を、role+name/href/ref と入力値・キーまで具体化し、browser_flow の steps として構成。
@@ -27,8 +27,8 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
     * タスクは「到達 URL」「操作対象（role+name/href/ref）」「入力値/キー」まで特定する。
 
 2) EXECUTE（実行）
-  - ページ遷移: PLAN で決めた URL に一度だけ遷移する。
-    * browser_goto: {"url": "https://..."}
+  - ページ遷移: PLAN で決めた URL または ID に一度だけ遷移する。
+    * browser_goto: {"url": "https://..."} または {"id": "123"}
   - 画面操作: 計画済みの一連操作は原則 browser_flow に集約し一括実行。
     * browser_flow: {"steps":[{"action":"input","ref":"e12","text":"2024/04"},{"action":"press","key":"Enter"}]}
       - 要素解決の優先順: role+name > href > ref

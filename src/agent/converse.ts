@@ -7,7 +7,7 @@ import {
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
 import { runQuery } from './tools/run-query.js';
-import { keywordSearch } from './tools/keyword-search.js';
+import { urlSearch } from './tools/url-search.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
@@ -219,12 +219,12 @@ export async function converseLoop(
             console.log(`Tool result (run_query): ${result}`);
             return result;
           }});
-        } else if (name === 'keyword_search') {
-          const keywords = (toolUse as any).input?.keywords ?? [];
+        } else if (name === 'url_search') {
+          const queryText = (toolUse as any).input?.query ?? '';
           parallelTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: keyword_search with input: ${JSON.stringify({ keywords })}`);
-            const result = await keywordSearch(Array.isArray(keywords) ? keywords : []);
-            console.log(`Tool result (keyword_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            console.log(`Calling tool: url_search with input: ${JSON.stringify({ query: queryText })}`);
+            const result = await urlSearch(String(queryText));
+            console.log(`Tool result (url_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_login') {
@@ -237,12 +237,19 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_goto') {
           const url = String((toolUse as any).input?.url ?? '');
+          const id = String((toolUse as any).input?.id ?? '');
           const autoLogin = (toolUse as any).input?.autoLogin;
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, autoLogin })}`);
-            const opts: { autoLogin?: boolean } = {};
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, id, autoLogin })}`);
+            const opts: { autoLogin?: boolean; isId?: boolean } = {};
             if (typeof autoLogin === 'boolean') opts.autoLogin = autoLogin;
-            const result = await browserGoto(String(url), opts);
+            let result: string;
+            if (id && !url) {
+              opts.isId = true;
+              result = await browserGoto(String(id), opts);
+            } else {
+              result = await browserGoto(String(url), opts);
+            }
             console.log(`Tool result (browser_goto): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});

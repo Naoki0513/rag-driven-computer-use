@@ -113,4 +113,74 @@ export async function flushObservability(): Promise<void> {
 }
 
 
+// ===== Rerank (Cohere via Bedrock Agent Runtime) 計測 =====
+export type RerankCallContext = {
+  modelArn: string;
+  region?: string;
+  input: Record<string, any>;
+  name?: string; // 任意の表示名（例: "URL Rerank" / "Snapshot Rerank"）
+};
+
+export type RerankCallHandle = {
+  generation?: any;
+};
+
+export function recordRerankCallStart(ctx: RerankCallContext): RerankCallHandle {
+  try {
+    const client = initLangfuseIfPossible();
+    if (!client) return {};
+    const displayName = ctx.name || 'Bedrock Rerank';
+    let gen: any = null;
+    if (_currentTrace && typeof _currentTrace.generation === 'function') {
+      gen = _currentTrace.generation({
+        name: displayName,
+        model: ctx.modelArn,
+        input: ctx.input,
+        metadata: { region: ctx.region },
+      });
+    } else {
+      gen = (client as any).generation({
+        name: displayName,
+        model: ctx.modelArn,
+        input: ctx.input,
+        metadata: { region: ctx.region },
+      });
+    }
+    return { generation: gen };
+  } catch (_e) {
+    return {};
+  }
+}
+
+export function recordRerankCallSuccess(handle: RerankCallHandle, payload: { response?: any; resultsSummary?: any; metadata?: Record<string, any> }): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    const body = {
+      output: payload.response ?? null,
+      metadata: payload.metadata ? { ...payload.metadata, resultsSummary: payload.resultsSummary } : { resultsSummary: payload.resultsSummary },
+    } as any;
+    if (typeof gen.end === 'function') gen.end(body);
+    else if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
+export function recordRerankCallError(handle: RerankCallHandle, error: unknown, extra?: Record<string, any>): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    const errorMessage = String((error as any)?.message ?? error);
+    const body = {
+      level: 'ERROR',
+      status_message: errorMessage,
+      metadata: extra,
+    } as any;
+    if (typeof gen.end === 'function') gen.end(body);
+    else if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
+
 

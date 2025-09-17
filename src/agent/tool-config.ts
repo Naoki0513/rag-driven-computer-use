@@ -77,15 +77,16 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_goto',
-          description: '指定したURLへ直接遷移します（実行後のスナップショットを返却）',
+          description: '指定したURLまたはIDに基づき遷移します。IDが渡された場合はCSVからURLを解決して遷移（実行後のスナップショット返却）',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 url: { type: 'string' },
+                id: { type: 'string', description: 'pages.id（文字列として受理）' },
                 autoLogin: { type: 'boolean', description: 'true の場合、今回の goto でログイン試行する（未指定時は初回のみ自動）' }
               },
-              required: ['url'],
+              required: [],
             },
           },
         },
@@ -105,13 +106,13 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
-          name: 'keyword_search',
-          description: 'CSV (pages) のスナップショットテキストに対して keywords のAND検索を行い、関連URLを最大3件返します。',
+          name: 'url_search',
+          description: 'クエリに対し Cohere Rerank 3.5 を用いてCSV全体から2種類の上位5件を返します: (1) URL列: {id,url}のTop5 (2) snapshotin MD列(500文字チャンク): {id,url,chunkIndex,text}のTop5。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { keywords: { type: 'array', items: { type: 'string' } } },
-              required: ['keywords'],
+              properties: { query: { type: 'string' } },
+              required: ['query'],
             },
           },
         },
