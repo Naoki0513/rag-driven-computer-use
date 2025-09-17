@@ -143,30 +143,15 @@ export async function urlSearch(query: string): Promise<string> {
       .slice(0, 5)
       .map((r) => {
         const meta = chunks[r.index];
-        return meta
-          ? {
-              id: meta.id,
-              url: meta.url,
-              chunkIndex: meta.chunkIndex,
-              text: meta.text,
-            }
-          : null;
+        return meta ? { id: meta.id, url: meta.url } : null;
       })
-      .filter(Boolean) as Array<{ id: string; url: string; chunkIndex: number; text: string }>;
+      .filter(Boolean) as Array<{ id: string; url: string }>;
 
-    const payload = await attachTodos({ ok: true, action: 'url_search', query: q, results: { urlTop5, snapshotTop5 }, meta: { regionUsed: region, modelArn } });
+    const payload = await attachTodos({ ok: true, action: 'url_search', query: q, results: { urlTop5, snapshotTop5 } });
     return JSON.stringify(payload);
   } catch (e: any) {
-    // 失敗時も検証しやすいように region/modelArn を返す
-    try {
-      const region = getRerankRegion();
-      const modelArn = getRerankModelArn(region);
-      const payload = await attachTodos({ ok: false, action: 'url_search', error: formatToolError(e), meta: { regionUsed: region, modelArn } });
-      return JSON.stringify(payload);
-    } catch {
-      const payload = await attachTodos({ ok: false, action: 'url_search', error: formatToolError(e) });
-      return JSON.stringify(payload);
-    }
+    const payload = await attachTodos({ ok: false, action: 'url_search', error: formatToolError(e) });
+    return JSON.stringify(payload);
   }
 }
 

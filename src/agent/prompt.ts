@@ -16,10 +16,10 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
 [フェーズ構成]
 1) PLAN（計画）
   - 入力解析: ユーザー要求から重要語を抽出し正規化。
-  - 情報収集: まず url_search を使い、クエリに対して Cohere Rerank 3.5 によるリランクで候補を得る（URL列Top5 / snapshotin MDチャンクTop5）。必要に応じて run_query で追加調査。
-    * url_search: {"query": "検索クエリ"}
-    * run_query: {"query": "SELECT ... FROM pages WHERE ..."}
-  - 対象URLの決定: 候補URLの中から到達すべき URL を暫定選定。
+  - 情報収集: まず url_search を使い、意味を強調したクエリで候補URL群（URL Top5 / snapshot Top5 いずれも {id,url}）を取得。
+    * url_search: {"query": "意味を強調した検索クエリ"}
+  - スナップショット確認: url_search で得た URL を用いて run_query で pages から必要なスナップショットや補助情報を取得し、到達すべきページを判断。
+    * run_query: {"query": "SELECT * FROM pages WHERE \"URL\" IN ('...','...')"}
   - 実行計画の具体化: ページ内で行う操作を、role+name/href/ref と入力値・キーまで具体化し、browser_flow の steps として構成。
 
   - ToDo 化（todo ツールで永続化）:
@@ -39,7 +39,7 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
 [リカバリとループ]
 - 失敗/停滞/要素未特定などで進めない場合:
   1) 実行を中断し PLAN に戻る。
-  2) keyword_search / run_query で構造を再把握し、計画（steps/対象URL/セレクタ/入力値）を再構築。
+  2) url_search / run_query で構造を再把握し、計画（steps/対象URL/セレクタ/入力値）を再構築。
   3) ToDo を追記/更新し、再度 EXECUTE へ。
 - ToDo がすべて完了し、ユーザー要求が満たされるまで Plan ↔ Execute を反復する。
 

@@ -107,7 +107,7 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'url_search',
-          description: 'クエリに対し Cohere Rerank 3.5 を用いてCSV全体から2種類の上位5件を返します: (1) URL列: {id,url}のTop5 (2) snapshotin MD列(500文字チャンク): {id,url,chunkIndex,text}のTop5。',
+          description: '意味ベースのクエリ（語の意味・意図を強調）で Cohere Rerank 3.5 により候補を抽出します。返却は2種類のTop5: (1) URL列: {id,url} (2) snapshotin MD列(500文字チャンク): {id,url}。この結果を起点に、後続で run_query を用いて該当URLのスナップショット詳細を確認してください。',
           inputSchema: {
             json: {
               type: 'object',
