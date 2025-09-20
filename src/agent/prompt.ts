@@ -18,13 +18,15 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
   - 入力解析: ユーザー要求から重要語を抽出し正規化。
   - 情報収集: まず url_search を使い、意味を強調したクエリで候補URL群（URL Top5 / snapshot Top5 いずれも {id,url}）を取得。
     * url_search: {"query": "意味を強調した検索クエリ"}
-  - スナップショット確認: url_search で得た URL を用いて run_query で pages から必要なスナップショットや補助情報を取得し、到達すべきページを判断。
+  - スナップショット確認（スナップショットサーチ）: 候補の id/url を元に snapshot_search を使い、pages."snapshotfor AI" のYAMLを階層ベースにチャンク分割（約1000-2000文字帯に収束）し、クエリでリランクした上位5チャンクを取得（チャンクサイズは .env の AGENT_SNAPSHOT_MAX_CHUNK_SIZE / AGENT_SNAPSHOT_MIN_CHUNK_SIZE で管理）。必要に応じて run_query で補助情報を確認。
+    * snapshot_search: {"ids": ["123"], "urls": ["https://..."], "query": "目的語句"}
     * run_query: {"query": "SELECT * FROM pages WHERE \"URL\" IN ('...','...')"}
   - 実行計画の具体化: ページ内で行う操作を、role+name/href/ref と入力値・キーまで具体化し、browser_flow の steps として構成。
 
   - ToDo 化（todo ツールで永続化）:
     * addTask / editTask / setDone を適宜使用。
     * タスクは「到達 URL」「操作対象（role+name/href/ref）」「入力値/キー」まで特定する。
+    * 計画前段の調査として url_search → snapshot_search を実施し、得られた関連チャンクの内容と対応URL/IDを根拠にタスク化する。
 
 2) EXECUTE（実行）
   - ページ遷移: PLAN で決めた URL または ID に一度だけ遷移する。

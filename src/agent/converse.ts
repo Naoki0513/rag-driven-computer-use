@@ -16,6 +16,7 @@ import { browserPress } from './tools/browser-press.js';
 import { browserFlow } from './tools/browser-flow.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
 import { todoTool } from './tools/todo.js';
+import { snapshotSearch } from './tools/snapshot-search.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
@@ -225,6 +226,14 @@ export async function converseLoop(
             console.log(`Calling tool: url_search with input: ${JSON.stringify({ query: queryText })}`);
             const result = await urlSearch(String(queryText));
             console.log(`Tool result (url_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'snapshot_search') {
+          const inp = (toolUse as any).input ?? {};
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: snapshot_search with input: ${JSON.stringify(inp).slice(0, 500)}${JSON.stringify(inp).length > 500 ? '...' : ''}`);
+            const result = await snapshotSearch(inp);
+            console.log(`Tool result (snapshot_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_login') {

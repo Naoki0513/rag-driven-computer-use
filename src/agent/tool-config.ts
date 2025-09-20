@@ -119,6 +119,23 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
+          name: 'snapshot_search',
+          description: '指定の id/url 群に紐づく "snapshotfor AI" のYAMLテキストを階層ベースでチャンク分割し、クエリでリランクして上位5件のチャンクを返します（各チャンクに元URL/IDメタデータを付与）',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string' } },
+                urls: { type: 'array', items: { type: 'string' } },
+                query: { type: 'string' },
+              },
+              required: ['query'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
           name: 'browser_login',
           description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします（実行後のテキストスナップショットを返却）',
           inputSchema: {

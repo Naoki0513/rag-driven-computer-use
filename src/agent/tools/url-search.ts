@@ -4,7 +4,7 @@ import { BedrockAgentRuntimeClient, RerankCommand } from '@aws-sdk/client-bedroc
 import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError } from '../observability.js';
 
 type UrlDoc = { id: string; url: string };
-type SnapshotChunk = { id: string; url: string; chunkIndex: number; text: string };
+type PageSnapshotDoc = { id: string; url: string; text: string };
 
 function getRerankRegion(): string {
   const raw = String(process.env.AGENT_BEDROCK_RERANK_REGION || '').trim();
@@ -23,16 +23,6 @@ function getRerankModelArn(region: string): string {
   return `arn:aws:bedrock:${region}::foundation-model/cohere.rerank-v3-5:0`;
 }
 
-function chunkString(input: string, size: number): string[] {
-  const s = String(input || '');
-  if (size <= 0) return [s];
-  const out: string[] = [];
-  for (let i = 0; i < s.length; i += size) {
-    out.push(s.slice(i, i + size));
-  }
-  return out;
-}
-
 async function fetchAllUrlDocs(): Promise<UrlDoc[]> {
   const rows = await queryAll<{ URL?: string; id?: string }>(
     'SELECT "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages WHERE "URL" IS NOT NULL'
@@ -46,11 +36,11 @@ async function fetchAllUrlDocs(): Promise<UrlDoc[]> {
   return out;
 }
 
-async function fetchAllSnapshotChunks(maxChunkLen: number): Promise<SnapshotChunk[]> {
-  const rows = await queryAll<{ snapshotinMD?: string; snapshot?: string; URL?: string; id?: string }>(
-    'SELECT COALESCE("snapshotin MD", "snapshotin MD") AS snapshot, "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages'
+async function fetchAllPageSnapshotDocs(): Promise<PageSnapshotDoc[]> {
+  const rows = await queryAll<{ snapshot?: string; URL?: string; id?: string }>(
+    'SELECT "snapshotin MD" AS snapshot, "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages'
   );
-  const out: SnapshotChunk[] = [];
+  const out: PageSnapshotDoc[] = [];
   for (const r of rows) {
     const url = String((r as any)?.url ?? '').trim();
     const id = String((r as any)?.id ?? '').trim();
@@ -58,21 +48,19 @@ async function fetchAllSnapshotChunks(maxChunkLen: number): Promise<SnapshotChun
     const text = typeof raw === 'string' ? raw : String(raw ?? '');
     if (!id || !url) continue;
     if (!text) continue;
-    const chunks = chunkString(text, maxChunkLen);
-    for (let i = 0; i < chunks.length; i += 1) {
-      out.push({ id, url, chunkIndex: i, text: chunks[i]! });
-    }
+    out.push({ id, url, text });
   }
   return out;
 }
 
 async function rerankTextDocuments(query: string, docs: Array<{ text: string }>, numberOfResults: number, client: BedrockAgentRuntimeClient, modelArn: string, region: string, name: string) {
   // Bedrock Agent Runtime Rerank API 入力を構築
+  const MAX_DOC_LEN = 32000; // API 制約
   const sources = docs.slice(0, 1000).map((d) => ({
     type: 'INLINE' as const,
     inlineDocumentSource: {
       type: 'TEXT' as const,
-      textDocument: { text: d.text },
+      textDocument: { text: String(d.text ?? '').slice(0, MAX_DOC_LEN) },
     },
   }));
   const cmd = new RerankCommand({
@@ -135,14 +123,14 @@ export async function urlSearch(query: string): Promise<string> {
       })
       .filter(Boolean) as Array<{ id: string; url: string }>;
 
-    // 2) snapshotin MD を 500 文字チャンク化してリランク
-    const chunks = await fetchAllSnapshotChunks(500);
-    const chunkTexts = chunks.map((c) => ({ text: c.text }));
-    const snapResults = await rerankTextDocuments(q, chunkTexts, 5, client, modelArn, region, 'Snapshot Rerank');
+    // 2) snapshotin MD をページ単位でそのままリランク
+    const pageDocs = await fetchAllPageSnapshotDocs();
+    const pageDocTexts = pageDocs.map((d) => ({ text: d.text }));
+    const snapResults = await rerankTextDocuments(q, pageDocTexts, 5, client, modelArn, region, 'Snapshot Rerank');
     const snapshotTop5 = snapResults
       .slice(0, 5)
       .map((r) => {
-        const meta = chunks[r.index];
+        const meta = pageDocs[r.index];
         return meta ? { id: meta.id, url: meta.url } : null;
       })
       .filter(Boolean) as Array<{ id: string; url: string }>;
