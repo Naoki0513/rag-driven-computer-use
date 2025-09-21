@@ -338,6 +338,55 @@ export async function converseLoop(
       if (toolResults.length) {
         console.log(`Adding tool results to messages: ${JSON.stringify(toolResults)}`);
         messages.push({ role: 'user', content: toolResults });
+        // 直前から2番目のツールリザルトの snapshots.top[*].text を削除してトークン節約
+        try {
+          let foundLatest = false;
+          for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const m: any = messages[i];
+            if (!m || m.role !== 'user' || !Array.isArray(m.content)) continue;
+            const hasToolResult = m.content.some((c: any) => c && typeof c === 'object' && 'toolResult' in c);
+            if (!hasToolResult) continue;
+            if (!foundLatest) {
+              // 最新のツールリザルトは保持
+              foundLatest = true;
+              continue;
+            }
+            // ここが直前から2番目（以降も該当するが、最初の1件のみ処理）
+            for (const block of m.content as any[]) {
+              if (!block || !block.toolResult) continue;
+              const tr = block.toolResult;
+              const contents = Array.isArray(tr.content) ? tr.content : [];
+              for (const cb of contents) {
+                if (!cb) continue;
+                // text が JSON 文字列/オブジェクトどちらでも処理
+                if (typeof cb.text === 'string') {
+                  try {
+                    const obj = JSON.parse(cb.text);
+                    if (obj && typeof obj === 'object' && obj.snapshots && typeof obj.snapshots === 'object') {
+                      const tops = (obj.snapshots as any).top;
+                      if (Array.isArray(tops)) {
+                        (obj.snapshots as any).top = tops.map(() => ({}));
+                      }
+                      cb.text = JSON.stringify(obj);
+                    }
+                  } catch {}
+                } else if (cb.text && typeof cb.text === 'object') {
+                  try {
+                    const obj = cb.text as any;
+                    if (obj && typeof obj === 'object' && obj.snapshots && typeof obj.snapshots === 'object') {
+                      const tops = (obj.snapshots as any).top;
+                      if (Array.isArray(tops)) {
+                        (obj.snapshots as any).top = tops.map(() => ({}));
+                      }
+                    }
+                  } catch {}
+                }
+              }
+            }
+            try { console.log('[Elide] Removed snapshots.top text for previous tool result.'); } catch {}
+            break; // 直前から2番目のみ処理
+          }
+        } catch {}
       }
       continue;
     }

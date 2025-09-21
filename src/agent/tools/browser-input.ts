@@ -22,7 +22,7 @@ export async function browserInput(ref: string, text: string, query?: string): P
         const snaps0 = await captureAndStoreSnapshot(page);
         let top0: Array<{ score: number; text: string }> = [];
         try { top0 = query ? await rerankSnapshotTopChunks(snaps0.text, query, 3) : []; } catch {}
-        const payload0 = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { top: top0, url: snaps0.url, hash: snaps0.hash } });
+        const payload0 = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { top: top0.map(({ text }) => ({ text })), url: snaps0.url } });
         return JSON.stringify(payload0);
       }
       await loc.waitFor({ state: 'visible', timeout: t });
@@ -30,7 +30,7 @@ export async function browserInput(ref: string, text: string, query?: string): P
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
       try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-      const payload = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { top, url: snaps.url, hash: snaps.hash } });
+      const payload = await attachTodos({ ok: true, action: 'input', ref, text, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
@@ -39,7 +39,7 @@ export async function browserInput(ref: string, text: string, query?: string): P
       if (snaps) {
         let top: Array<{ score: number; text: string }> = [];
         try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-        payload.snapshots = { top, url: snaps.url, hash: snaps.hash };
+        payload.snapshots = { top: top.map(({ text }) => ({ text })), url: snaps.url };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

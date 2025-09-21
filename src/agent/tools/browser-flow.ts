@@ -226,7 +226,7 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
         selected: {},
         navigation: {},
         performed,
-        snapshots: { top, url: snaps.url, hash: snaps.hash },
+        snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url },
       });
       return JSON.stringify(payload);
   } catch (e: any) {

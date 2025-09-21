@@ -72,7 +72,7 @@ export async function browserGoto(urlOrId: string, opts?: { autoLogin?: boolean;
     const snaps = await captureAndStoreSnapshot(page);
     let top: Array<{ score: number; text: string }> = [];
     try { top = opts?.query ? await rerankSnapshotTopChunks(snaps.text, String(opts.query), 3) : []; } catch {}
-    const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed, snapshots: { top, url: snaps.url, hash: snaps.hash }, meta: { autoLoginRequested: shouldAutoLogin, loginTried, resolvedById } });
+    const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url }, meta: { autoLoginRequested: shouldAutoLogin, loginTried, resolvedById } });
     return JSON.stringify(payload);
   } catch (e: any) {
     const payload = await attachTodos({ action: 'goto', url: urlOrId, performed: performed.concat([{ stage: 'fatal', ok: formatToolError(e) }]) });

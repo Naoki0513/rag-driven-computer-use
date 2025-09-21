@@ -7,7 +7,7 @@ export async function browserSnapshot(query?: string): Promise<string> {
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
       try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-      const payload = await attachTodos({ ok: true, action: 'snapshot', snapshots: { top, url: snaps.url, hash: snaps.hash } });
+      const payload = await attachTodos({ ok: true, action: 'snapshot', snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
@@ -16,7 +16,7 @@ export async function browserSnapshot(query?: string): Promise<string> {
       if (snaps) {
         let top: Array<{ score: number; text: string }> = [];
         try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-        payload.snapshots = { top, url: snaps.url, hash: snaps.hash };
+        payload.snapshots = { top: top.map(({ text }) => ({ text })), url: snaps.url };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);
