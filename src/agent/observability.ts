@@ -75,9 +75,84 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
       if (payload?.response?.ResponseMetadata) meta.ResponseMetadata = payload.response.ResponseMetadata;
     } catch {}
     if (typeof payload?.outputText === 'string') meta.outputText = payload.outputText;
+
+    // ===== Bedrock usage → Langfuse usageDetails へのマッピング =====
+    function toInt(n: any): number | undefined {
+      const v = Math.trunc(Number(n));
+      return Number.isFinite(v) && v >= 0 ? v : undefined;
+    }
+
+    function mapBedrockUsageToUsageDetails(u: any): Record<string, number> | undefined {
+      if (!u || typeof u !== 'object') return undefined;
+      const input = toInt((u as any).inputTokens);
+      const output = toInt((u as any).outputTokens);
+      const cacheReadA = toInt((u as any).cacheReadInputTokens);
+      const cacheReadB = toInt((u as any).cacheReadInputTokenCount);
+      const cacheWriteA = toInt((u as any).cacheWriteInputTokens);
+      const cacheWriteB = toInt((u as any).cacheWriteInputTokenCount);
+      const total = toInt((u as any).totalTokens);
+      const usageDetails: Record<string, number> = {};
+      if (typeof input === 'number') usageDetails.inputTokens = input;
+      if (typeof output === 'number') usageDetails.outputTokens = output;
+      const cacheRead = typeof cacheReadB === 'number' ? cacheReadB : cacheReadA;
+      const cacheWrite = typeof cacheWriteB === 'number' ? cacheWriteB : cacheWriteA;
+      if (typeof cacheRead === 'number') usageDetails.cacheReadInputTokenCount = cacheRead;
+      if (typeof cacheWrite === 'number') usageDetails.cacheWriteInputTokenCount = cacheWrite;
+      if (typeof total === 'number') usageDetails.totalTokens = total;
+      // totalTokens が無い場合は合算で補完
+      if (usageDetails.totalTokens === undefined) {
+        let sum = 0;
+        let has = false;
+        for (const k of Object.keys(usageDetails)) {
+          if (k === 'totalTokens') continue;
+          sum += usageDetails[k]!;
+          has = true;
+        }
+        if (has) usageDetails.totalTokens = sum;
+      }
+      return Object.keys(usageDetails).length ? usageDetails : undefined;
+    }
+
+    function computeCostDetails(usageDetails?: Record<string, number>): Record<string, number> | undefined {
+      if (!usageDetails) return undefined;
+      function priceOrDefault(envKey: string, d: number): number {
+        const v = Number(process.env[envKey]);
+        return Number.isFinite(v) && v >= 0 ? v : d;
+      }
+      // 既定単価（1トークンあたりUSD）: ユーザー指定
+      const pInput = priceOrDefault('AGENT_LANGFUSE_COST_INPUT_PER_TOKEN', 0.00000300);
+      const pOutput = priceOrDefault('AGENT_LANGFUSE_COST_OUTPUT_PER_TOKEN', 0.00001500);
+      const pCacheRead = priceOrDefault('AGENT_LANGFUSE_COST_CACHE_READ_INPUT_PER_TOKEN', 0.00000030);
+      const pCacheWrite = priceOrDefault('AGENT_LANGFUSE_COST_CACHE_WRITE_INPUT_PER_TOKEN', 0.00000375);
+      const costs: Record<string, number> = {};
+      if (typeof usageDetails.inputTokens === 'number') costs.inputTokens = usageDetails.inputTokens * pInput;
+      if (typeof usageDetails.outputTokens === 'number') costs.outputTokens = usageDetails.outputTokens * pOutput;
+      if (typeof usageDetails.cacheReadInputTokenCount === 'number') costs.cacheReadInputTokenCount = usageDetails.cacheReadInputTokenCount * pCacheRead;
+      if (typeof usageDetails.cacheWriteInputTokenCount === 'number') costs.cacheWriteInputTokenCount = usageDetails.cacheWriteInputTokenCount * pCacheWrite;
+      if (Object.keys(costs).length) {
+        const total = Object.values(costs).reduce((a, b) => a + b, 0);
+        costs.total = total;
+        return costs;
+      }
+      return undefined;
+    }
+
+    const usageDetails = mapBedrockUsageToUsageDetails(payload?.usage);
+    const costDetails = computeCostDetails(usageDetails);
+
     const body = {
       output: payload.response ?? null,
-      usage: payload.usage ?? undefined,
+      // 互換: tracing SDK 形式（推奨）
+      usageDetails: usageDetails ?? undefined,
+      costDetails: costDetails ?? undefined,
+      // 後方互換: 主要値も usage に複製（キーは従来の input/output/total）
+      usage: usageDetails
+        ? {
+            input: usageDetails.inputTokens,
+            output: usageDetails.outputTokens,
+            total: usageDetails.totalTokens,
+          }
+        : undefined,
       metadata: Object.keys(meta).length ? meta : undefined,
     } as any;
     if (typeof gen.end === 'function') gen.end(body);
