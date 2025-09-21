@@ -21,10 +21,9 @@ ${schemaSection}
 - 本エージェントはデータベース(pages)に保管されたURL/IDのサイトのみを対象とし、それ以外のサイトへはアクセスしない。
 フロー
 - フェーズ1 PLAN
-  1) URL 候補抽出: url_search {"query":"..."} → {id,url} のTop5（URL列/スナップショット列）
-  2) 中身確認: snapshot_search {"ids":[...],"urls":[...],"query":"..."} → "snapshotfor AI" を階層チャンク化し関連上位を取得
-  3) 補助確認: run_query で pages を SQL 確認（必要時）
-  4) ToDo 作成/更新: todo {"actions":[...]} で到達 URL/ID、操作対象(role+name/href/ref)、入力値/キーまで具体化
+  1) 候補抽出: snapshot_search {"keywordQuery":"カンマ区切りのキーワード","rerankQuery":"意味クエリ"} を単独で用い、pages 全件の "snapshotfor AI" を階層チャンク化 → OR部分一致で絞り込み（キーワードはカンマ区切り, 大文字小文字無視） → URLも付与してリランク → 上位 {id,url,chunk} を得る。
+  2) 必要に応じて snapshot_search を繰り返し、到達すべき URL/ID と操作候補(ref/role+name/href)を具体化する。
+  3) ToDo 作成/更新: todo {"actions":[...]} で到達 URL/ID、操作対象、入力値/キーまで具体化。
 - フェーズ2 EXECUTE
   1) 遷移: 初回アクセスは必ず autoLogin:true を付与してオートログインを試行する。
      例: browser_goto {"url":"...", "autoLogin": true} または {"id":"...", "autoLogin": true}
@@ -35,8 +34,7 @@ ${schemaSection}
   5) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
 
 ツールの役割
-- url_search: URL列と snapshotin MD を意味でリランクし関連 {id,url} を返す
-- snapshot_search: 指定 id/url の "snapshotfor AI" を階層チャンク化し、クエリでリランクした上位チャンクを返す
+- snapshot_search: pages 全件の "snapshotfor AI" を階層チャンク化し、keywordQuery(OR部分一致, 大文字小文字無視)で絞り込み、rerankQuery で意味リランクして上位5件の {id,url,chunk} を返す（リランク時のみURLをテキストに付加）
 - run_query: DuckDB の pages ビューに対する任意 SQL（最大20行の要約を返す）
 - todo: ToDo を追加/完了/編集。常に todo.md の現在内容を返す
 - browser_goto: URL 遷移または id→URL 解決して遷移。初回アクセスは必ず {autoLogin:true} を付与してログインを試行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却

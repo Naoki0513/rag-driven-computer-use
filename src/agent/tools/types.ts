@@ -6,8 +6,7 @@ export type ToolUseInput =
   | { name: 'browser_input'; input: { ref: string; text: string; query?: string }; toolUseId: string }
   | { name: 'browser_press'; input: { ref: string; key: string; query?: string }; toolUseId: string }
   | { name: 'browser_snapshot'; input: { query?: string }; toolUseId: string }
-  | { name: 'url_search'; input: { query: string }; toolUseId: string }
-  | { name: 'snapshot_search'; input: { ids?: string[]; urls?: string[]; query: string }; toolUseId: string }
+  | { name: 'snapshot_search'; input: { keywordQuery: string; rerankQuery: string; topK?: number }; toolUseId: string }
   | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string }
   | {
       name: 'browser_flow';

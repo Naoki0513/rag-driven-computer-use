@@ -7,7 +7,6 @@ import {
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
 import { runQuery } from './tools/run-query.js';
-import { urlSearch } from './tools/url-search.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
@@ -219,14 +218,6 @@ export async function converseLoop(
             console.log(`Calling tool: run_query with input: ${JSON.stringify({ query: q })}`);
             const result = await runQuery(String(q));
             console.log(`Tool result (run_query): ${result}`);
-            return result;
-          }});
-        } else if (name === 'url_search') {
-          const queryText = (toolUse as any).input?.query ?? '';
-          parallelTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: url_search with input: ${JSON.stringify({ query: queryText })}`);
-            const result = await urlSearch(String(queryText));
-            console.log(`Tool result (url_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'snapshot_search') {

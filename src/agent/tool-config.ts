@@ -16,7 +16,6 @@ export function buildToolConfig(): ToolConfiguration {
           }
         }
       },
-      // keyword_search は上段で定義済み
       // run_query は下段に1つだけ定義します
       {
         toolSpec: {
@@ -108,30 +107,17 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
-          name: 'url_search',
-          description: '意味ベースのクエリ（語の意味・意図を強調）で Cohere Rerank 3.5 により候補を抽出します。返却は2種類のTop5: (1) URL列: {id,url} (2) snapshotin MD列(500文字チャンク): {id,url}。この結果を起点に、後続で run_query を用いて該当URLのスナップショット詳細を確認してください。',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { query: { type: 'string' } },
-              required: ['query'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
           name: 'snapshot_search',
-          description: '指定の id/url 群に紐づく "snapshotfor AI" のYAMLテキストを階層ベースでチャンク分割し、クエリでリランクして上位5件のチャンクを返します（各チャンクに元URL/IDメタデータを付与）',
+          description: '全ページの "snapshotfor AI" を一括取得し階層チャンク分割。keywordQuery(AND部分一致, 大文字小文字無視)でチャンクを絞り込み、rerankQueryでCohere Rerankにより意味で並べ替え、上位K件(未指定時は5件)の {id,url,chunk} を返します（リランク時のみURLもテキストに付加）。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                ids: { type: 'array', items: { type: 'string' } },
-                urls: { type: 'array', items: { type: 'string' } },
-                query: { type: 'string' },
+                keywordQuery: { type: 'string', description: 'OR部分一致で使う小粒のキーワード（カンマ区切り）' },
+                rerankQuery: { type: 'string', description: '意味重視で並べ替えるクエリ' },
+                topK: { type: 'number', description: '返却する上位件数（未指定時は5、上限は環境設定に従う）' },
               },
-              required: ['query'],
+              required: ['keywordQuery', 'rerankQuery'],
             },
           },
         },
