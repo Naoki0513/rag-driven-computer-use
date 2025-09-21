@@ -5,6 +5,8 @@ import { getTimeoutMs } from '../../utilities/timeout.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { BedrockAgentRuntimeClient, RerankCommand } from '@aws-sdk/client-bedrock-agent-runtime';
+import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError, recordRerankUsage } from '../observability.js';
 
 // 共有ブラウザ管理（単一の Browser/Context/Page を使い回す）
 let sharedBrowser: Browser | null = null;
@@ -330,6 +332,271 @@ export async function attachTodos<T extends Record<string, any>>(payload: T): Pr
     return Object.assign(payload, { todos });
   } catch {
     return Object.assign(payload, { todos: { path: 'todo.md', content: '' } });
+  }
+}
+
+// ===== スナップショット チャンク化 + リランク =====
+type Line = { idx: number; indent: number; text: string; depth: number };
+
+function parseLines(snapshot: string): Line[] {
+  const out: Line[] = [];
+  const stack: number[] = [];
+  const lines = String(snapshot || '').split(/\r?\n/);
+  const re = /^(\s*)-?\s*(.*)$/;
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i]!;
+    if (!raw || !raw.trim()) continue;
+    const m = re.exec(raw);
+    const spaces = m ? (m[1] ?? '') : '';
+    const rest = m ? (m[2] ?? '') : raw.trim();
+    const indent = spaces.length;
+    while (stack.length && indent < stack[stack.length - 1]!) stack.pop();
+    if (!stack.length || indent > stack[stack.length - 1]!) stack.push(indent);
+    const depth = Math.max(0, stack.length - 1);
+    out.push({ idx: i, indent, text: rest.trim(), depth });
+  }
+  return out;
+}
+
+function splitByDepth(lines: Line[], start: number, end: number, targetDepth: number): Array<[number, number]> {
+  const anchors: number[] = [];
+  for (let i = start; i <= end; i += 1) if (lines[i]!.depth === targetDepth) anchors.push(i);
+  if (!anchors.length) return [[start, end]];
+  const segs: Array<[number, number]> = [];
+  for (let j = 0; j < anchors.length; j += 1) {
+    const a = anchors[j]!;
+    const b = (j + 1 < anchors.length) ? (anchors[j + 1]! - 1) : end;
+    segs.push([a, b]);
+  }
+  return segs;
+}
+
+function headerChain(lines: Line[], startIdx: number): string[] {
+  const chain: string[] = [];
+  let curDepth = lines[startIdx]!.depth - 1;
+  let pos = startIdx - 1;
+  const parents: Line[] = [];
+  while (curDepth >= 0 && pos >= 0) {
+    if (lines[pos]!.depth === curDepth) {
+      parents.push(lines[pos]!);
+      curDepth -= 1;
+    }
+    pos -= 1;
+  }
+  parents.reverse();
+  let base = 0;
+  for (const p of parents) {
+    chain.push(`${' '.repeat(base)}- ${p.text}`);
+    base += 2;
+  }
+  return chain;
+}
+
+function commonPrefix<T>(lists: T[][]): T[] {
+  if (!lists.length) return [];
+  const minLen = Math.min(...lists.map((l) => l.length));
+  const out: T[] = [];
+  for (let i = 0; i < minLen; i += 1) {
+    const token = lists[0]![i]!;
+    let ok = true;
+    for (let k = 1; k < lists.length; k += 1) if (lists[k]![i] !== token) { ok = false; break; }
+    if (!ok) break;
+    out.push(token);
+  }
+  return out;
+}
+
+function buildChunkTextGrouped(lines: Line[], segs: Array<[number, number]>): string {
+  const chains = segs.map(([s]) => headerChain(lines, s));
+  const groups = new Map<string, Array<[number, number]>>();
+  for (let i = 0; i < segs.length; i += 1) {
+    const keyList = chains[i]!;
+    const key = JSON.stringify(keyList);
+    const list = groups.get(key) || [];
+    list.push(segs[i]!);
+    groups.set(key, list);
+  }
+  const ordered = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const chainLists = ordered.map(([k]) => JSON.parse(k) as string[]);
+  const cp = commonPrefix(chainLists);
+  const parts: string[] = [];
+  if (cp.length) parts.push(...cp);
+  for (let gi = 0; gi < ordered.length; gi += 1) {
+    const chain = chainLists[gi]!;
+    const seglist = ordered[gi]![1]!;
+    const rem = chain.slice(cp.length);
+    if (rem.length) parts.push(...rem);
+    for (const [s, e] of seglist) {
+      for (let i = s; i <= e; i += 1) parts.push(`${' '.repeat(lines[i]!.indent)}- ${lines[i]!.text}`);
+      parts.push('');
+    }
+  }
+  return parts.join('\n').replace(/\n+$/, '');
+}
+
+function chunkChars(lines: Line[], segs: Array<[number, number]>): number {
+  return buildChunkTextGrouped(lines, segs).length;
+}
+
+export function chunkSnapshotText(snapshot: string, maxSize: number, minSize: number): string[] {
+  const lines = parseLines(snapshot);
+  if (!lines.length) return [];
+  const maxDepth = Math.max(...lines.map((l) => l.depth));
+
+  const initial = splitByDepth(lines, 0, lines.length - 1, 0);
+  let chunks: Array<Array<[number, number]>> = initial.map((seg) => [seg]);
+  let currentDepth = 1;
+  while (true) {
+    let changed = false;
+    const next: Array<Array<[number, number]>> = [];
+    for (const segs of chunks) {
+      if (chunkChars(lines, segs) <= maxSize || currentDepth > maxDepth) {
+        next.push(segs);
+        continue;
+      }
+      for (const [s, e] of segs) {
+        const subs = splitByDepth(lines, s, e, currentDepth);
+        if (subs.length === 1) {
+          next.push([subs[0]!]);
+        } else {
+          changed = true;
+          for (const sub of subs) next.push([sub]);
+        }
+      }
+    }
+    chunks = next;
+    if (!changed) {
+      if (chunks.every((segs) => chunkChars(lines, segs) <= maxSize)) break;
+    }
+    currentDepth += 1;
+    if (currentDepth > maxDepth) break;
+  }
+
+  let i = 0;
+  while (i < chunks.length) {
+    const size = chunkChars(lines, chunks[i]!);
+    if (size < minSize) {
+      if (i + 1 < chunks.length) {
+        chunks[i] = chunks[i]!.concat(chunks[i + 1]!);
+        chunks.splice(i + 1, 1);
+        continue;
+      } else if (i - 1 >= 0) {
+        chunks[i - 1] = chunks[i - 1]!.concat(chunks[i]!);
+        chunks.splice(i, 1);
+        i -= 1;
+        continue;
+      }
+    }
+    i += 1;
+  }
+
+  return chunks.map((segs) => buildChunkTextGrouped(lines, segs));
+}
+
+function getRerankRegion(): string {
+  const raw = String(process.env.AGENT_BEDROCK_RERANK_REGION || '').trim();
+  if (raw) {
+    const first = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)[0];
+    if (first) return first;
+  }
+  return 'us-west-2';
+}
+
+function getRerankModelArn(region: string): string {
+  const envArn = String(process.env.AGENT_BEDROCK_RERANK_MODEL_ARN || '').trim();
+  if (envArn) return envArn;
+  return `arn:aws:bedrock:${region}::foundation-model/cohere.rerank-v3-5:0`;
+}
+
+function toIntEnv(key: string, dflt: number): number {
+  const v = Math.trunc(Number(process.env[key]));
+  return Number.isFinite(v) && v > 0 ? v : dflt;
+}
+
+export function getDefaultTopK(category: 'browser' | 'search', fallback: number): number {
+  if (category === 'browser') return toIntEnv('AGENT_BROWSER_TOP_K', fallback);
+  return toIntEnv('AGENT_SEARCH_TOP_K', fallback);
+}
+
+export type RerankOptions = { topK?: number; category?: 'browser' | 'search'; name?: string };
+
+export async function rerankPlainTextDocuments(query: string, docs: string[], options?: RerankOptions): Promise<Array<{ index: number; score: number }>> {
+  const q = String(query || '').trim();
+  const list = Array.isArray(docs) ? docs : [];
+  if (!q || !list.length) return [];
+  const region = getRerankRegion();
+  const modelArn = getRerankModelArn(region);
+  const client = new BedrockAgentRuntimeClient({ region });
+  const MAX_DOC_LEN = 32000;
+  const sources = list.slice(0, 1000).map((t) => ({
+    type: 'INLINE' as const,
+    inlineDocumentSource: { type: 'TEXT' as const, textDocument: { text: String(t ?? '').slice(0, MAX_DOC_LEN) } },
+  }));
+  const defaultK = getDefaultTopK(options?.category || 'search', 5);
+  const k = Math.max(0, Math.min(options?.topK ?? defaultK, sources.length));
+  if (k === 0) return [];
+  const cmd = new RerankCommand({
+    queries: [{ type: 'TEXT', textQuery: { text: q } }],
+    sources,
+    rerankingConfiguration: { type: 'BEDROCK_RERANKING_MODEL', bedrockRerankingConfiguration: { numberOfResults: k, modelConfiguration: { modelArn } } },
+  } as any);
+  const handle = recordRerankCallStart({ modelArn, region, input: { query: q, sourcesPreviewCount: sources.length, numberOfResults: k }, name: options?.name || 'Text Rerank' });
+  try { recordRerankUsage(handle, sources.length); } catch {}
+  try {
+    const res = await client.send(cmd);
+    const results = ((res as any)?.results ?? []).slice(0, k) as Array<{ index: number; relevanceScore: number }>;
+    recordRerankCallSuccess(handle, { response: res, resultsSummary: results.map((r, i) => ({ i, index: r.index, score: r.relevanceScore })) });
+    return results.map((r) => ({ index: r.index, score: r.relevanceScore }));
+  } catch (e: any) {
+    recordRerankCallError(handle, e, { modelArn, region, numberOfResults: k, name: options?.name || 'Text Rerank' });
+    return [];
+  }
+}
+
+export async function rerankSnapshotTopChunks(snapshotText: string, query: string, topOrOptions?: number | RerankOptions): Promise<Array<{ score: number; text: string }>> {
+  const q = String(query || '').trim();
+  if (!snapshotText || !q) return [];
+  const envMax = String(process.env.AGENT_SNAPSHOT_MAX_CHUNK_SIZE || '').trim();
+  const envMin = String(process.env.AGENT_SNAPSHOT_MIN_CHUNK_SIZE || '').trim();
+  const maxChunkSize = Number.isFinite(Number(envMax)) ? Math.max(100, Math.trunc(Number(envMax))) : 5500;
+  const minChunkSize = Number.isFinite(Number(envMin)) ? Math.max(50, Math.trunc(Number(envMin))) : 500;
+
+  const chunks = chunkSnapshotText(snapshotText, maxChunkSize, minChunkSize);
+  if (!chunks.length) return [];
+  const region = getRerankRegion();
+  const modelArn = getRerankModelArn(region);
+  const client = new BedrockAgentRuntimeClient({ region });
+  const MAX_DOC_LEN = 32000;
+  const sources = chunks.slice(0, 1000).map((text) => ({
+    type: 'INLINE' as const,
+    inlineDocumentSource: { type: 'TEXT' as const, textDocument: { text: String(text ?? '').slice(0, MAX_DOC_LEN) } },
+  }));
+  let explicitTopK: number | undefined = undefined;
+  let options: RerankOptions | undefined = undefined;
+  if (typeof topOrOptions === 'number') explicitTopK = topOrOptions;
+  else options = topOrOptions;
+  const defaultK = getDefaultTopK(options?.category || 'browser', 3);
+  const k = Math.max(0, Math.min(explicitTopK ?? options?.topK ?? defaultK, sources.length));
+  if (k === 0) return [];
+  const cmd = new RerankCommand({
+    queries: [{ type: 'TEXT', textQuery: { text: q } }],
+    sources,
+    rerankingConfiguration: {
+      type: 'BEDROCK_RERANKING_MODEL',
+      bedrockRerankingConfiguration: { numberOfResults: k, modelConfiguration: { modelArn } },
+    },
+  } as any);
+  const handle = recordRerankCallStart({ modelArn, region, input: { query: q, sourcesPreviewCount: sources.length, numberOfResults: k }, name: options?.name || 'Snapshot Rerank (Live)' });
+  try { recordRerankUsage(handle, sources.length); } catch {}
+  try {
+    const res = await client.send(cmd);
+    const results = ((res as any)?.results ?? []).slice(0, k) as Array<{ index: number; relevanceScore: number }>;
+    recordRerankCallSuccess(handle, { response: res, resultsSummary: results.map((r, i) => ({ i, index: r.index, score: r.relevanceScore })) });
+    const top = results.map((r) => ({ score: r.relevanceScore, text: chunks[r.index] ?? '' })).filter((x) => x.text);
+    return top;
+  } catch (e: any) {
+    recordRerankCallError(handle, e, { modelArn, region, numberOfResults: k, name: options?.name || 'Snapshot Rerank (Live)' });
+    return [];
   }
 }
 

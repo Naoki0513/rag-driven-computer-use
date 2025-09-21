@@ -207,8 +207,9 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_snapshot') {
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log('Calling tool: browser_snapshot');
-            const result = await browserSnapshot();
+            const q = (toolUse as any).input?.query ?? '';
+            console.log(`Calling tool: browser_snapshot ${JSON.stringify({ query: q })}`);
+            const result = await browserSnapshot(String(q || ''));
             console.log(`Tool result (browser_snapshot): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
@@ -238,9 +239,10 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_login') {
           const url = (toolUse as any).input?.url ?? '';
+          const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_login ${JSON.stringify({ url })}`);
-            const result = await browserLogin(String(url));
+            console.log(`Calling tool: browser_login ${JSON.stringify({ url, query: queryText })}`);
+            const result = await browserLogin(String(url), String(queryText || ''));
             console.log(`Tool result (browser_login): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
@@ -248,10 +250,12 @@ export async function converseLoop(
           const url = String((toolUse as any).input?.url ?? '');
           const id = String((toolUse as any).input?.id ?? '');
           const autoLogin = (toolUse as any).input?.autoLogin;
+          const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, id, autoLogin })}`);
-            const opts: { autoLogin?: boolean; isId?: boolean } = {};
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, id, autoLogin, query: queryText })}`);
+            const opts: { autoLogin?: boolean; isId?: boolean; query?: string } = {};
             if (typeof autoLogin === 'boolean') opts.autoLogin = autoLogin;
+            if (queryText) opts.query = String(queryText);
             let result: string;
             if (id && !url) {
               opts.isId = true;
@@ -264,27 +268,30 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_click') {
           const ref = (toolUse as any).input?.ref ?? '';
+          const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_click ${JSON.stringify({ ref })}`);
-            const result = await browserClick(String(ref));
+            console.log(`Calling tool: browser_click ${JSON.stringify({ ref, query: queryText })}`);
+            const result = await browserClick(String(ref), String(queryText || ''));
             console.log(`Tool result (browser_click): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_input') {
           const ref = (toolUse as any).input?.ref ?? '';
           const text = (toolUse as any).input?.text ?? '';
+          const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_input ${JSON.stringify({ ref, text })}`);
-            const result = await browserInput(String(ref), String(text));
+            console.log(`Calling tool: browser_input ${JSON.stringify({ ref, text, query: queryText })}`);
+            const result = await browserInput(String(ref), String(text), String(queryText || ''));
             console.log(`Tool result (browser_input): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_press') {
           const ref = (toolUse as any).input?.ref ?? '';
           const key = (toolUse as any).input?.key ?? '';
+          const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_press ${JSON.stringify({ ref, key })}`);
-            const result = await browserPress(String(ref), String(key));
+            console.log(`Calling tool: browser_press ${JSON.stringify({ ref, key, query: queryText })}`);
+            const result = await browserPress(String(ref), String(key), String(queryText || ''));
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});

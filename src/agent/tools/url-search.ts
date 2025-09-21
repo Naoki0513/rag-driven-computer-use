@@ -1,4 +1,4 @@
-import { attachTodos, formatToolError } from './util.js';
+import { attachTodos, formatToolError, rerankPlainTextDocuments } from './util.js';
 import { queryAll } from '../duckdb.js';
 import { BedrockAgentRuntimeClient, RerankCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError, recordRerankUsage } from '../observability.js';
@@ -53,52 +53,10 @@ async function fetchAllPageSnapshotDocs(): Promise<PageSnapshotDoc[]> {
   return out;
 }
 
-async function rerankTextDocuments(query: string, docs: Array<{ text: string }>, numberOfResults: number, client: BedrockAgentRuntimeClient, modelArn: string, region: string, name: string) {
-  // Bedrock Agent Runtime Rerank API 入力を構築
-  const MAX_DOC_LEN = 32000; // API 制約
-  const sources = docs.slice(0, 1000).map((d) => ({
-    type: 'INLINE' as const,
-    inlineDocumentSource: {
-      type: 'TEXT' as const,
-      textDocument: { text: String(d.text ?? '').slice(0, MAX_DOC_LEN) },
-    },
-  }));
-  const cmd = new RerankCommand({
-    queries: [{ type: 'TEXT', textQuery: { text: query } }],
-    sources,
-    rerankingConfiguration: {
-      type: 'BEDROCK_RERANKING_MODEL',
-      bedrockRerankingConfiguration: {
-        numberOfResults,
-        modelConfiguration: { modelArn },
-      },
-    },
-  } as any);
-  const handle = recordRerankCallStart({
-    modelArn,
-    region,
-    input: {
-      queries: [{ type: 'TEXT', textQuery: { text: query } }],
-      sourcesPreviewCount: sources.length,
-      numberOfResults,
-    },
-    name,
-  });
-  // 100 ドキュメントあたり 1 トークン（切り上げ）で usage を送信
-  try { recordRerankUsage(handle, sources.length); } catch {}
-  try {
-    const res = await client.send(cmd);
-    const results = (res as any)?.results ?? [];
-    // サマリのみをメタデータに格納（全文はresに保持）
-    const summary = Array.isArray(results)
-      ? results.slice(0, numberOfResults).map((r: any, i: number) => ({ i, index: r?.index, score: r?.relevanceScore }))
-      : [];
-    recordRerankCallSuccess(handle, { response: res, resultsSummary: summary });
-    return results as Array<{ index: number; relevanceScore: number }>;
-  } catch (e: any) {
-    recordRerankCallError(handle, e, { modelArn, region, numberOfResults, name });
-    throw e;
-  }
+async function rerankTextDocuments(query: string, docs: Array<{ text: string }>, numberOfResults: number, _client: BedrockAgentRuntimeClient, _modelArn: string, _region: string, name: string) {
+  const texts = docs.map((d) => d.text);
+  const out = await rerankPlainTextDocuments(query, texts, { topK: numberOfResults, category: 'search', name });
+  return out.map((r) => ({ index: r.index, relevanceScore: r.score }));
 }
 
 export async function urlSearch(query: string): Promise<string> {
@@ -116,7 +74,9 @@ export async function urlSearch(query: string): Promise<string> {
     // 1) URL列を文書化してリランク（各ドキュメントはURLテキスト）
     const urlDocs = await fetchAllUrlDocs();
     const urlDocTexts = urlDocs.map((d) => ({ text: d.url }));
-    const urlResults = await rerankTextDocuments(q, urlDocTexts, 5, client, modelArn, region, 'URL Rerank');
+    const searchTopEnv = Number(process.env.AGENT_SEARCH_TOP_K);
+    const kUrl = Number.isFinite(searchTopEnv) && searchTopEnv > 0 ? Math.min(searchTopEnv, urlDocTexts.length) : Math.min(5, urlDocTexts.length);
+    const urlResults = await rerankTextDocuments(q, urlDocTexts, kUrl, client, modelArn, region, 'URL Rerank');
     const urlTop5 = urlResults
       .slice(0, 5)
       .map((r) => {
@@ -128,7 +88,8 @@ export async function urlSearch(query: string): Promise<string> {
     // 2) snapshotin MD をページ単位でそのままリランク
     const pageDocs = await fetchAllPageSnapshotDocs();
     const pageDocTexts = pageDocs.map((d) => ({ text: d.text }));
-    const snapResults = await rerankTextDocuments(q, pageDocTexts, 5, client, modelArn, region, 'Snapshot Rerank');
+    const kSnap = Number.isFinite(searchTopEnv) && searchTopEnv > 0 ? Math.min(searchTopEnv, pageDocTexts.length) : Math.min(5, pageDocTexts.length);
+    const snapResults = await rerankTextDocuments(q, pageDocTexts, kSnap, client, modelArn, region, 'Snapshot Rerank');
     const snapshotTop5 = snapResults
       .slice(0, 5)
       .map((r) => {

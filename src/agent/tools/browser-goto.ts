@@ -1,11 +1,11 @@
-import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, attachTodos } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, attachTodos, rerankSnapshotTopChunks } from './util.js';
 import { queryAll } from '../duckdb.js';
 import { browserLogin } from './browser-login.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
 let _browserGotoHasRun = false;
 
-export async function browserGoto(urlOrId: string, opts?: { autoLogin?: boolean; isId?: boolean }): Promise<string> {
+export async function browserGoto(urlOrId: string, opts?: { autoLogin?: boolean; isId?: boolean; query?: string }): Promise<string> {
   const { page } = await ensureSharedBrowserStarted();
   const t = getTimeoutMs('agent');
   const performed: Array<{ stage: string; ok: boolean | string; note?: string }> = [];
@@ -70,7 +70,9 @@ export async function browserGoto(urlOrId: string, opts?: { autoLogin?: boolean;
     // 3) スナップショット（ログイン実施後の画面）
     try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
     const snaps = await captureAndStoreSnapshot(page);
-    const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed, snapshots: { text: snaps.text }, meta: { autoLoginRequested: shouldAutoLogin, loginTried, resolvedById } });
+    let top: Array<{ score: number; text: string }> = [];
+    try { top = opts?.query ? await rerankSnapshotTopChunks(snaps.text, String(opts.query), 3) : []; } catch {}
+    const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed, snapshots: { top, url: snaps.url, hash: snaps.hash }, meta: { autoLoginRequested: shouldAutoLogin, loginTried, resolvedById } });
     return JSON.stringify(payload);
   } catch (e: any) {
     const payload = await attachTodos({ action: 'goto', url: urlOrId, performed: performed.concat([{ stage: 'fatal', ok: formatToolError(e) }]) });

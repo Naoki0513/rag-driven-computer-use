@@ -6,11 +6,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_snapshot',
-          description: '現在のページのスナップショット4AIを取得します（他ツールの後続検証や単体取得に使用）',
+          description: '現在のページのスナップショット4AIを取得します。query（意味クエリ）に基づき、階層チャンク化+リランクで上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: {},
+              properties: { query: { type: 'string' } },
               required: []
             }
           }
@@ -21,7 +21,7 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_flow',
-          description: '現在のページ上で、クリック/入力/キー送信の複数操作(steps)を順次一括実行します（要素解決は ref→role+name→href のフォールバック、実行後スナップショット返却）',
+          description: '現在のページ上で、クリック/入力/キー送信の複数操作(steps)を順次一括実行します。steps実行後、query（意味クエリ）に基づきスナップショットを階層チャンク化+リランクし、上位3件のチャンクのみ返却します（要素解決は ref→role+name→href のフォールバック）。',
           inputSchema: {
             json: {
               type: 'object',
@@ -41,7 +41,8 @@ export function buildToolConfig(): ToolConfiguration {
                     },
                     required: ['action']
                   }
-                }
+                },
+                query: { type: 'string', description: 'steps 実行後に何を探したいかを表す意味クエリ。これに基づき上位3チャンクを返却' }
               },
               required: ['steps']
             }
@@ -77,14 +78,15 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_goto',
-          description: '指定したURLまたはIDに基づき遷移します。IDが渡された場合はCSVからURLを解決して遷移（実行後のスナップショット返却）',
+          description: '指定したURLまたはIDに基づき遷移します。IDが渡された場合はCSVからURLを解決して遷移。遷移後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のチャンクのみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 url: { type: 'string' },
                 id: { type: 'string', description: 'pages.id（文字列として受理）' },
-                autoLogin: { type: 'boolean', description: 'true の場合、今回の goto でログイン試行する（未指定時は初回のみ自動）' }
+                autoLogin: { type: 'boolean', description: 'true の場合、今回の goto でログイン試行する（未指定時は初回のみ自動）' },
+                query: { type: 'string', description: '遷移後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
               },
               required: [],
             },
@@ -137,11 +139,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_login',
-          description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします（実行後のテキストスナップショットを返却）',
+          description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします。ログイン後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { url: { type: 'string' } },
+              properties: { url: { type: 'string' }, query: { type: 'string' } },
               required: ['url'],
             },
           },
@@ -150,11 +152,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_click',
-          description: 'ref(eXX) で特定した要素をクリックします（実行後のテキストスナップショットを返却）',
+          description: 'ref(eXX) で特定した要素をクリックします。クリック後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' } },
+              properties: { ref: { type: 'string' }, query: { type: 'string' } },
               required: ['ref'],
             },
           },
@@ -163,11 +165,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_input',
-          description: 'ref(eXX) で特定した要素にテキストを入力します（実行後のテキストスナップショットを返却）',
+          description: 'ref(eXX) で特定した要素にテキストを入力します。入力後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' }, text: { type: 'string' } },
+              properties: { ref: { type: 'string' }, text: { type: 'string' }, query: { type: 'string' } },
               required: ['ref', 'text'],
             },
           },
@@ -176,11 +178,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_press',
-          description: 'ref(eXX) で特定した要素に対してキーボード押下を送ります（実行後のテキストスナップショットを返却）',
+          description: 'ref(eXX) で特定した要素に対してキーボード押下を送ります。送信後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' }, key: { type: 'string' } },
+              properties: { ref: { type: 'string' }, key: { type: 'string' }, query: { type: 'string' } },
               required: ['ref', 'key'],
             },
           },

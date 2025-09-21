@@ -1,4 +1,4 @@
-import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText, rerankSnapshotTopChunks } from './util.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
@@ -14,6 +14,7 @@ type FlowStep = {
 
 type BrowserFlowInput = {
   steps: FlowStep[];
+  query?: string;
 };
 
 export async function browserFlow(input: BrowserFlowInput): Promise<string> {
@@ -218,12 +219,14 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
       }
 
       const snaps = await captureAndStoreSnapshot(page);
+      let top: Array<{ score: number; text: string }> = [];
+      try { top = input?.query ? await rerankSnapshotTopChunks(snaps.text, String(input.query), 3) : []; } catch {}
       const payload = await attachTodos({
         action: 'browser_flow',
         selected: {},
         navigation: {},
         performed,
-        snapshots: { text: snaps.text },
+        snapshots: { top, url: snaps.url, hash: snaps.hash },
       });
       return JSON.stringify(payload);
   } catch (e: any) {

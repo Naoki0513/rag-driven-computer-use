@@ -1,8 +1,8 @@
-import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, resolveLocatorByRef, attachTodos, getResolutionSnapshotText, rerankSnapshotTopChunks } from './util.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
-export async function browserPress(ref: string, key: string): Promise<string> {
+export async function browserPress(ref: string, key: string, query?: string): Promise<string> {
   try {
     const { page } = await ensureSharedBrowserStarted();
     try {
@@ -24,14 +24,18 @@ export async function browserPress(ref: string, key: string): Promise<string> {
         await loc.press(key);
       }
       const snaps = await captureAndStoreSnapshot(page);
-      const payload = await attachTodos({ ok: true, action: 'press', ref, key, snapshots: { text: snaps.text } });
+      let top: Array<{ score: number; text: string }> = [];
+      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+      const payload = await attachTodos({ ok: true, action: 'press', ref, key, snapshots: { top, url: snaps.url, hash: snaps.hash } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'press', ref, key };
       if (snaps) {
-        payload.snapshots = { text: snaps.text };
+        let top: Array<{ score: number; text: string }> = [];
+        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+        payload.snapshots = { top, url: snaps.url, hash: snaps.hash };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

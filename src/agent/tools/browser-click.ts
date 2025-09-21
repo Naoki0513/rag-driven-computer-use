@@ -1,8 +1,8 @@
-import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText } from './util.js';
+import { ensureSharedBrowserStarted, captureAndStoreSnapshot, formatToolError, clickWithFallback, resolveLocatorByRef, attachTodos, getResolutionSnapshotText, rerankSnapshotTopChunks } from './util.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 
-export async function browserClick(ref: string): Promise<string> {
+export async function browserClick(ref: string, query?: string): Promise<string> {
   try {
     const { page } = await ensureSharedBrowserStarted();
     try {
@@ -22,7 +22,9 @@ export async function browserClick(ref: string): Promise<string> {
         const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
         await clickWithFallback(page, fallbackEl, isCheckbox);
         const snaps = await captureAndStoreSnapshot(page);
-        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { text: snaps.text } });
+        let top: Array<{ score: number; text: string }> = [];
+        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { top, url: snaps.url, hash: snaps.hash } });
         return JSON.stringify(payload);
       }
       await el.waitFor({ state: 'visible', timeout: t });
@@ -34,14 +36,18 @@ export async function browserClick(ref: string): Promise<string> {
       } catch {}
       await clickWithFallback(page, el, isCheckbox);
       const snaps = await captureAndStoreSnapshot(page);
-      const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { text: snaps.text } });
+      let top: Array<{ score: number; text: string }> = [];
+      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+      const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { top, url: snaps.url, hash: snaps.hash } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;
       try { snaps = await captureAndStoreSnapshot((await ensureSharedBrowserStarted()).page); } catch {}
       let payload: any = { ok: formatToolError(e), action: 'click', ref };
       if (snaps) {
-        payload.snapshots = { text: snaps.text };
+        let top: Array<{ score: number; text: string }> = [];
+        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+        payload.snapshots = { top, url: snaps.url, hash: snaps.hash };
       }
       payload = await attachTodos(payload);
       return JSON.stringify(payload);

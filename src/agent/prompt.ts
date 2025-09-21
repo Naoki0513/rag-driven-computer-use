@@ -29,7 +29,7 @@ ${schemaSection}
   1) 遷移: 初回アクセスは必ず autoLogin:true を付与してオートログインを試行する。
      例: browser_goto {"url":"...", "autoLogin": true} または {"id":"...", "autoLogin": true}
      2回目以降は必要時のみ autoLogin:true を指定
-  2) 画面操作(原則): browser_flow {"steps":[{action,ref?,role?,name?,href?,text?,key?}]} を一括実行（解決優先: ref→role+name→href）
+  2) 画面操作(原則): browser_flow {"steps":[{action,ref?,role?,name?,href?,text?,key?}], "query":"クリック/入力後に探したい要素や情報の意味クエリ"} を一括実行（解決優先: ref→role+name→href）
   3) フォールバック: browser_click / browser_input / browser_press / browser_login / browser_snapshot を必要最小限で使用
   4) ToDo 反映: 成功に応じて todo の setDone / editTask
   5) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
@@ -39,13 +39,13 @@ ${schemaSection}
 - snapshot_search: 指定 id/url の "snapshotfor AI" を階層チャンク化し、クエリでリランクした上位チャンクを返す
 - run_query: DuckDB の pages ビューに対する任意 SQL（最大20行の要約を返す）
 - todo: ToDo を追加/完了/編集。常に todo.md の現在内容を返す
-- browser_goto: URL 遷移または id→URL 解決して遷移。初回アクセスは必ず {autoLogin:true} を付与してログインを試行。実行後にスナップショット
-- browser_flow: 複数の click/input/press を順次実行。実行後にスナップショット
-- browser_click: ref 指定要素をクリック（必要に応じ role+name を使用）。実行後にスナップショット
-- browser_input: ref 指定要素へ入力（必要に応じ role+name を使用）。実行後にスナップショット
-- browser_press: ref 指定要素へキー送信（必要に応じ role+name を使用）。実行後にスナップショット
-- browser_login: 資格情報でログイン。実行後にスナップショット
-- browser_snapshot: 現在ページのスナップショットを取得
+- browser_goto: URL 遷移または id→URL 解決して遷移。初回アクセスは必ず {autoLogin:true} を付与してログインを試行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_flow: 複数の click/input/press を順次実行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_click: ref 指定要素をクリック（必要に応じ role+name を使用）。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_input: ref 指定要素へ入力（必要に応じ role+name を使用）。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_press: ref 指定要素へキー送信（必要に応じ role+name を使用）。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_login: 資格情報でログイン。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
+- browser_snapshot: 現在ページのスナップショットを取得。{query} に基づき階層チャンク化+リランクし上位3件のみ返却
 
 出力
 - 日本語で簡潔に。`;
