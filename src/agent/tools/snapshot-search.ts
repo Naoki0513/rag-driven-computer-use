@@ -1,7 +1,7 @@
 import { attachTodos, formatToolError } from './util.js';
 import { queryAll } from '../duckdb.js';
 import { BedrockAgentRuntimeClient, RerankCommand } from '@aws-sdk/client-bedrock-agent-runtime';
-import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError } from '../observability.js';
+import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError, recordRerankUsage } from '../observability.js';
 
 type SnapshotRow = { snapshot?: string; url?: string; id?: string };
 
@@ -249,6 +249,8 @@ async function rerankChunks(query: string, chunks: ChunkDoc[], topK: number) {
     },
   } as any);
   const handle = recordRerankCallStart({ modelArn, region, input: { query, sourcesPreviewCount: sources.length, numberOfResults: topK }, name: 'Snapshot Rerank' });
+  // 100 ドキュメントあたり 1 トークン（切り上げ）で usage を送信
+  try { recordRerankUsage(handle, sources.length); } catch {}
   try {
     const res = await client.send(cmd);
     const results = (res as any)?.results ?? [];

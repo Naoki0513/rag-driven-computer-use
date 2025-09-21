@@ -182,5 +182,19 @@ export function recordRerankCallError(handle: RerankCallHandle, error: unknown, 
   }
 }
 
+// Rerank 用: ドキュメント数から算出したトークンを usageDetails として即時送信
+// 100 ドキュメントあたり 1 トークン、切り上げ（0 件なら 0 トークン）
+export function recordRerankUsage(handle: RerankCallHandle, documentsCount: number): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    const n = Math.max(0, Math.trunc(Number(documentsCount || 0)));
+    const tokens = n === 0 ? 0 : Math.ceil(n / 100);
+    const body = { usageDetails: { input: tokens, total: tokens } } as any;
+    if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
 
 
