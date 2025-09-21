@@ -217,13 +217,18 @@ export async function resolveLocatorByRef(
   const role = rn?.role || '';
   const name = rn?.name || '';
 
-  // 祖先のロール候補を収集（近い順に最大5件）
-  const ancestorRoles: string[] = [];
-  for (let j = targetIdx - 1; j >= 0 && ancestorRoles.length < 5; j -= 1) {
-    const m = /-\s*([a-zA-Z]+)(?:\s+"[^"]+")?.*\[ref=/.exec(lines[j]!);
+  // 祖先候補（ロール名・スナップショット行・インデント）を収集（近い順に最大5件）
+  type AncestorCandidate = { role: string; lineIndex: number; indent: number };
+  const ancestorCandidates: AncestorCandidate[] = [];
+  for (let j = targetIdx - 1; j >= 0 && ancestorCandidates.length < 5; j -= 1) {
+    const lineJ = lines[j]!;
+    const m = /-\s*([a-zA-Z]+)(?:\s+"[^"]+")?.*\[ref=/.exec(lineJ);
     if (m) {
       const r = m[1]!.toLowerCase();
-      if (!['generic', 'text', 'separator', 'figure', 'img'].includes(r)) ancestorRoles.push(r);
+      if (['generic', 'text', 'separator', 'figure', 'img'].includes(r)) continue;
+      const mIndent = /^(\s*)-/.exec(lineJ);
+      const indent = mIndent ? (mIndent[1]?.length ?? 0) : 0;
+      ancestorCandidates.push({ role: r, lineIndex: j, indent });
     }
   }
 
@@ -237,16 +242,42 @@ export async function resolveLocatorByRef(
     return Math.max(0, count - 1);
   }
 
-  // 祖先ロールの nth を順に試しながらスコープを狭める
+  // 祖先ロールの nth を順に試しながらスコープを狭める（祖先自身の nth はグローバル算出で十分）
   let scope: Locator | null = null;
+  let scopeAncestorLineIndex: number | null = null;
+  let scopeAncestorIndent: number = 0;
   try {
-    for (const aRole of ancestorRoles) {
-      const aIdx = computeRoleIndex(targetIdx, aRole);
-      const aLoc = page.getByRole(aRole as any).nth(aIdx);
+    for (const a of ancestorCandidates) {
+      const aIdx = computeRoleIndex(a.lineIndex, a.role);
+      const aLoc = page.getByRole(a.role as any).nth(aIdx);
       const exists = (await aLoc.count()) > 0;
-      if (exists) { scope = aLoc; break; }
+      if (exists) {
+        scope = aLoc;
+        scopeAncestorLineIndex = a.lineIndex;
+        scopeAncestorIndent = a.indent;
+        break;
+      }
     }
   } catch {}
+
+  // スコープ内序数を算出（スコープが無ければ従来のグローバル序数を使用）
+  function computeRoleIndexWithinScope(
+    ancestorLineIndex: number,
+    ancestorIndent: number,
+    targetLineIndex: number,
+    roleName: string,
+  ): number {
+    let count = 0;
+    const roleRegex = new RegExp(`-\\s*${roleName}(\\s|\\[|\\")`, 'i');
+    for (let i = ancestorLineIndex + 1; i <= targetLineIndex; i += 1) {
+      const li = lines[i]!;
+      const mIndent = /^(\s*)-/.exec(li);
+      const indent = mIndent ? (mIndent[1]?.length ?? 0) : 0;
+      if (indent <= ancestorIndent) continue; // スコープ外
+      if (roleRegex.test(li)) count += 1;
+    }
+    return Math.max(0, count - 1);
+  }
 
   // 最終ロケーター（スコープがあれば内部で、なければページ全体で）
   try {
@@ -256,8 +287,9 @@ export async function resolveLocatorByRef(
         ? base.getByRole(role as any, { name, exact: true } as any)
         : base.getByRole(role as any);
 
-      // スナップショット序数で nth 指定
-      const idx = computeRoleIndex(targetIdx, role);
+      const idx = (scope && scopeAncestorLineIndex !== null)
+        ? computeRoleIndexWithinScope(scopeAncestorLineIndex, scopeAncestorIndent, targetIdx, role)
+        : computeRoleIndex(targetIdx, role);
       loc = loc.nth(idx);
       const exists = (await loc.count()) > 0;
       if (exists) {
