@@ -16,6 +16,10 @@ export async function browserLogin(url: string): Promise<string> {
       if (url && url.trim().length > 0) {
         await page.goto(url, { timeout: t });
         await page.waitForLoadState('networkidle', { timeout: t });
+      } else {
+        // URL 未指定でも現在ページのロード完了を待機
+        try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
+        try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
       }
 
       const userSelectors = [
@@ -39,6 +43,33 @@ export async function browserLogin(url: string): Promise<string> {
           await el.fill(username);
           filledUser = true;
           break;
+        }
+      }
+      if (!filledUser) {
+        // ログインフォームを開く可能性のあるトリガーをクリックして再試行
+        const openSelectors = [
+          'button:has-text("ログイン")',
+          'a:has-text("ログイン")',
+          'button:has-text("Sign in")',
+          'a:has-text("Sign in")',
+          'text=ログイン >> xpath=ancestor::button',
+        ];
+        for (const sel of openSelectors) {
+          const el = await page.$(sel);
+          if (el) {
+            try { await el.click({ timeout: t }); } catch {}
+            try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
+            break;
+          }
+        }
+        // フィールド再探索
+        for (const sel of userSelectors) {
+          const el = await page.$(sel);
+          if (el) {
+            await el.fill(username);
+            filledUser = true;
+            break;
+          }
         }
       }
       if (!filledUser) throw new Error('ユーザー名入力欄が見つかりません');
