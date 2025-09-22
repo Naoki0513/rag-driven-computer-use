@@ -56,14 +56,47 @@ export function addCachePoints(
             const tr = block.toolResult;
             const contents = Array.isArray(tr.content) ? tr.content : [];
             for (const cb of contents) {
-              if (!cb || typeof cb.text !== 'string') continue;
-              try {
-                const obj = JSON.parse(cb.text);
-                if (obj && typeof obj === 'object' && obj.snapshots && typeof obj.snapshots === 'object') {
-                  if ('text' in obj.snapshots) delete obj.snapshots.text;
-                  cb.text = JSON.stringify(obj);
-                }
-              } catch {}
+              if (!cb) continue;
+              // 文字列(JSON)の場合
+              if (typeof cb.text === 'string') {
+                try {
+                  const obj = JSON.parse(cb.text);
+                  if (obj && typeof obj === 'object') {
+                    let changed = false;
+                    if (obj.snapshots && typeof obj.snapshots === 'object') {
+                      // snapshots.top[*].text を省略 / 古い実装の snapshots.text も互換削除
+                      const tops = (obj.snapshots as any).top;
+                      if (Array.isArray(tops)) { (obj.snapshots as any).top = tops.map(() => ({})); changed = true; }
+                      if ('text' in obj.snapshots) { delete (obj as any).snapshots.text; changed = true; }
+                    }
+                    if ((obj as any).action === 'snapshot_search' && Array.isArray((obj as any).results)) {
+                      for (const r of (obj as any).results as any[]) {
+                        if (r && typeof r === 'object' && 'chunk' in r) { delete (r as any).chunk; changed = true; }
+                      }
+                    }
+                    if (changed) cb.text = JSON.stringify(obj);
+                  }
+                } catch {}
+                continue;
+              }
+              // オブジェクトの場合
+              if (cb.text && typeof cb.text === 'object') {
+                try {
+                  const obj = cb.text as any;
+                  if (obj && typeof obj === 'object') {
+                    if (obj.snapshots && typeof obj.snapshots === 'object') {
+                      const tops = (obj.snapshots as any).top;
+                      if (Array.isArray(tops)) { (obj.snapshots as any).top = tops.map(() => ({})); }
+                      if ('text' in obj.snapshots) { delete (obj as any).snapshots.text; }
+                    }
+                    if ((obj as any).action === 'snapshot_search' && Array.isArray((obj as any).results)) {
+                      for (const r of (obj as any).results as any[]) {
+                        if (r && typeof r === 'object' && 'chunk' in r) delete (r as any).chunk;
+                      }
+                    }
+                  }
+                } catch {}
+              }
             }
           }
         }
