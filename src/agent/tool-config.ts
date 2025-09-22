@@ -138,12 +138,17 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_click',
-          description: 'ref(eXX) で特定した要素をクリックします。クリック後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素をクリックします。ref もしくは role+name の指定に加え、query が必須です。解決は ref→role+name の順に試行します。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' }, query: { type: 'string' } },
-              required: ['ref'],
+              properties: {
+                ref: { type: 'string' },
+                role: { type: 'string' },
+                name: { type: 'string' },
+                query: { type: 'string' }
+              },
+              required: ['query'],
             },
           },
         },
@@ -151,12 +156,18 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_input',
-          description: 'ref(eXX) で特定した要素にテキストを入力します。入力後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にテキストを入力します。ref もしくは role+name の指定に加え、text と query が必須です。解決は ref→role+name の順に試行します。入力後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' }, text: { type: 'string' }, query: { type: 'string' } },
-              required: ['ref', 'text'],
+              properties: {
+                ref: { type: 'string' },
+                role: { type: 'string' },
+                name: { type: 'string' },
+                text: { type: 'string' },
+                query: { type: 'string' }
+              },
+              required: ['text', 'query'],
             },
           },
         },
@@ -164,12 +175,18 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_press',
-          description: 'ref(eXX) で特定した要素に対してキーボード押下を送ります。送信後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にキーボード押下を送ります。ref もしくは role+name の指定に加え、key と query が必須です。解決は ref→role+name の順に試行します。送信後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { ref: { type: 'string' }, key: { type: 'string' }, query: { type: 'string' } },
-              required: ['ref', 'key'],
+              properties: {
+                ref: { type: 'string' },
+                role: { type: 'string' },
+                name: { type: 'string' },
+                key: { type: 'string' },
+                query: { type: 'string' }
+              },
+              required: ['key', 'query'],
             },
           },
         },

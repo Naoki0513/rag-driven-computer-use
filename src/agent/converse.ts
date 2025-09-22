@@ -336,31 +336,44 @@ export async function converseLoop(
             return result;
           }});
         } else if (name === 'browser_click') {
-          const ref = (toolUse as any).input?.ref ?? '';
-          const queryText = (toolUse as any).input?.query ?? '';
+          const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_click ${JSON.stringify({ ref, query: queryText })}`);
-            const result = await browserClick(String(ref), String(queryText || ''));
+            console.log(`Calling tool: browser_click ${JSON.stringify(inp)}`);
+            const payload: any = { query: String(inp.query ?? '') };
+            const ref = String(inp.ref ?? '').trim();
+            const role = String(inp.role ?? '').trim();
+            const nm = String(inp.name ?? '').trim();
+            if (ref) payload.ref = ref;
+            if (role && nm) { payload.role = role; payload.name = nm; }
+            const result = await browserClick(payload);
             console.log(`Tool result (browser_click): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_input') {
-          const ref = (toolUse as any).input?.ref ?? '';
-          const text = (toolUse as any).input?.text ?? '';
-          const queryText = (toolUse as any).input?.query ?? '';
+          const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_input ${JSON.stringify({ ref, text, query: queryText })}`);
-            const result = await browserInput(String(ref), String(text), String(queryText || ''));
+            console.log(`Calling tool: browser_input ${JSON.stringify(inp)}`);
+            const payload: any = { text: String(inp.text ?? ''), query: String(inp.query ?? '') };
+            const ref = String(inp.ref ?? '').trim();
+            const role = String(inp.role ?? '').trim();
+            const nm = String(inp.name ?? '').trim();
+            if (ref) payload.ref = ref;
+            if (role && nm) { payload.role = role; payload.name = nm; }
+            const result = await browserInput(payload);
             console.log(`Tool result (browser_input): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_press') {
-          const ref = (toolUse as any).input?.ref ?? '';
-          const key = (toolUse as any).input?.key ?? '';
-          const queryText = (toolUse as any).input?.query ?? '';
+          const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_press ${JSON.stringify({ ref, key, query: queryText })}`);
-            const result = await browserPress(String(ref), String(key), String(queryText || ''));
+            console.log(`Calling tool: browser_press ${JSON.stringify(inp)}`);
+            const payload: any = { key: String(inp.key ?? ''), query: String(inp.query ?? '') };
+            const ref = String(inp.ref ?? '').trim();
+            const role = String(inp.role ?? '').trim();
+            const nm = String(inp.name ?? '').trim();
+            if (ref) payload.ref = ref;
+            if (role && nm) { payload.role = role; payload.name = nm; }
+            const result = await browserPress(payload);
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
