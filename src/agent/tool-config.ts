@@ -6,11 +6,11 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_snapshot',
-          description: '現在のページのスナップショット4AIを取得します。query（意味クエリ）に基づき、階層チャンク化+リランクで上位3件のみ返却します。',
+          description: '現在のページのスナップショット4AIを取得します。ブラウザースナップショットのみ、リランクせずページ全体のスナップショット本文をそのまま返却します（snapshots.text）。',
           inputSchema: {
             json: {
               type: 'object',
-              properties: { query: { type: 'string' } },
+              properties: {},
               required: []
             }
           }

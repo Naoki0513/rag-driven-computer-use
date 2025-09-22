@@ -285,9 +285,8 @@ export async function converseLoop(
           }});
         } else if (name === 'browser_snapshot') {
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            const q = (toolUse as any).input?.query ?? '';
-            console.log(`Calling tool: browser_snapshot ${JSON.stringify({ query: q })}`);
-            const result = await browserSnapshot(String(q || ''));
+            console.log('Calling tool: browser_snapshot {}');
+            const result = await browserSnapshot();
             console.log(`Tool result (browser_snapshot): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
