@@ -20,11 +20,13 @@ export async function browserClick(ref: string, query?: string): Promise<string>
         const fallbackEl = locator.first();
         await fallbackEl.waitFor({ state: 'visible', timeout: t });
         const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
-        await clickWithFallback(page, fallbackEl, isCheckbox);
+        const clickErrors: string[] = [];
+        await clickWithFallback(page, fallbackEl, isCheckbox, undefined, clickErrors);
+        try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
         const snaps = await captureAndStoreSnapshot(page);
         let top: Array<{ score: number; text: string }> = [];
         try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
+        const payload = await attachTodos({ ok: true, action: 'click', ref, target: { role: rn.role, name: rn.name }, diagnostics: (clickErrors.length ? { clickErrors } : undefined), snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
         return JSON.stringify(payload);
       }
       await el.waitFor({ state: 'visible', timeout: t });
@@ -34,11 +36,13 @@ export async function browserClick(ref: string, query?: string): Promise<string>
         const roleAttr = await el.getAttribute('role');
         isCheckbox = String(roleAttr || '').toLowerCase() === 'checkbox';
       } catch {}
-      await clickWithFallback(page, el, isCheckbox);
+      const clickErrors: string[] = [];
+      await clickWithFallback(page, el, isCheckbox, undefined, clickErrors);
+      try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
       try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
-      const payload = await attachTodos({ ok: true, action: 'click', ref, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
+      const payload = await attachTodos({ ok: true, action: 'click', ref, diagnostics: (clickErrors.length ? { clickErrors } : undefined), snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
       return JSON.stringify(payload);
     } catch (e: any) {
       let snaps: { text: string; hash: string; url: string } | null = null;

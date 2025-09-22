@@ -99,6 +99,7 @@ export async function clickWithFallback(
   locator: Locator,
   isCheckbox: boolean,
   attemptTimeoutMs?: number,
+  errorsCollector?: string[],
 ): Promise<void> {
   const envTimeout = getTimeoutMs('agent');
   const t = Number.isFinite(Number(attemptTimeoutMs)) && Number(attemptTimeoutMs) > 0
@@ -122,14 +123,14 @@ export async function clickWithFallback(
         await ancestorLabel.click({ timeout: t });
         return;
       }
-    } catch {}
+    } catch (e: any) { if (errorsCollector) errorsCollector.push(`[checkbox:label] ${formatToolError(e)}`); }
   }
 
   // 1) 通常クリック（短いタイムアウト）
-  try { await locator.click({ timeout: t }); return; } catch {}
+  try { await locator.click({ timeout: t }); return; } catch (e: any) { if (errorsCollector) errorsCollector.push(`[click] ${formatToolError(e)}`); }
 
   // 2) スクロールして再試行（短いタイムアウト）
-  try { await locator.scrollIntoViewIfNeeded(); await locator.click({ timeout: t }); return; } catch {}
+  try { await locator.scrollIntoViewIfNeeded(); await locator.click({ timeout: t }); return; } catch (e: any) { if (errorsCollector) errorsCollector.push(`[scroll+click] ${formatToolError(e)}`); }
 
   // 3) checkbox なら最後にもう一度 label 経由を試す
   if (isCheckbox) {
@@ -149,10 +150,11 @@ export async function clickWithFallback(
         await ancestorLabel.click({ timeout: t });
         return;
       }
-    } catch {}
+    } catch (e: any) { if (errorsCollector) errorsCollector.push(`[checkbox:label:retry] ${formatToolError(e)}`); }
   }
 
   // 4) 最終手段: force クリック（無条件に実行）
+  if (errorsCollector) errorsCollector.push('[force] 前段のクリックがすべて失敗したため force クリックにフォールバックしました');
   await locator.click({ force: true });
 }
 
@@ -285,10 +287,18 @@ export async function resolveLocatorByRef(
   try {
     if (role) {
       const base = scope ?? page;
-      let loc = name
-        ? base.getByRole(role as any, { name, exact: true } as any)
-        : base.getByRole(role as any);
+      // name がある場合は序数 nth を適用せず、role+name の first で解決する
+      if (name) {
+        const locByName = base.getByRole(role as any, { name, exact: true } as any).first();
+        const existsByName = (await locByName.count()) > 0;
+        if (existsByName) {
+          try { await locByName.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
+          return locByName;
+        }
+      }
 
+      // name が無い場合のみ、スナップショット上の序数に基づいて nth を適用
+      let loc = base.getByRole(role as any);
       const idx = (scope && scopeAncestorLineIndex !== null)
         ? computeRoleIndexWithinScope(scopeAncestorLineIndex, scopeAncestorIndent, targetIdx, role)
         : computeRoleIndex(targetIdx, role);

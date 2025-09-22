@@ -111,7 +111,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   // 役割が不明でも checkbox 判定を試行
                   let isCheckbox = false;
                   try { const r = await el.getAttribute('role'); isCheckbox = String(r||'').toLowerCase() === 'checkbox'; } catch {}
-                  await clickWithFallback(page, el, isCheckbox);
+                  const clickErrors: string[] = [];
+                  await clickWithFallback(page, el, isCheckbox, undefined, clickErrors);
                   resolved = true;
                 }
               } catch (e: any) { note = formatToolError(e); }
@@ -126,7 +127,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                   const el = loc.first();
                   await el.waitFor({ state: 'visible', timeout: t });
                   const isCheckbox = String(rn.role || '').toLowerCase() === 'checkbox';
-                  await clickWithFallback(page, el, isCheckbox);
+                  const clickErrors: string[] = [];
+                  await clickWithFallback(page, el, isCheckbox, undefined, clickErrors);
                   resolved = true;
                 }
               } catch (e: any) { note = formatToolError(e); }
@@ -139,7 +141,8 @@ export async function browserFlow(input: BrowserFlowInput): Promise<string> {
                 const el = locator.first();
                 await el.waitFor({ state: 'visible', timeout: t });
                 const isCheckbox = String(role || '').toLowerCase() === 'checkbox';
-                await clickWithFallback(page, el, isCheckbox);
+                const clickErrors: string[] = [];
+                await clickWithFallback(page, el, isCheckbox, undefined, clickErrors);
                 resolved = true;
               } catch (e: any) { note = formatToolError(e); }
             }
