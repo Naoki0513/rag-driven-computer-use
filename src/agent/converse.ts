@@ -24,6 +24,13 @@ export type ConverseLoopResult = {
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
 };
 
+function supportsThinking(modelId: string): boolean {
+  const id = String(modelId || '').toLowerCase();
+  return id.includes('anthropic.claude-sonnet-4-20250514')
+    || id.includes('anthropic.claude-opus-4-20250514')
+    || id.includes('anthropic.claude-3-7-sonnet-20250219');
+}
+
 // リージョンのスロットリング健康状態（単純なクールダウン）
 const regionThrottleUntil = new Map<string, number>();
 function isRegionCoolingDown(region: string): boolean {
@@ -107,14 +114,41 @@ export async function converseLoop(
         if (lowerId.includes('anthropic.claude-3-7-sonnet-20250219')) {
           betaTags.push('token-efficient-tools-2025-02-19');
         }
+        // ===== Thinking (Extended / Interleaved) 構成 =====
+        const envThinkingEnabled = String(process.env.AGENT_THINKING_ENABLED ?? '').toLowerCase() === 'true';
+        const envInterleaved = String(process.env.AGENT_THINKING_INTERLEAVED ?? '').toLowerCase() === 'true';
+        const envBudgetRaw = Math.trunc(Number(process.env.AGENT_THINKING_BUDGET_TOKENS ?? 1024));
+        const envMaxTokensRaw = Math.trunc(Number(process.env.AGENT_MAX_TOKENS ?? 4096));
+        const maxTokens = Number.isFinite(envMaxTokensRaw) && envMaxTokensRaw > 0 ? envMaxTokensRaw : 4096;
+        const thinkingBudgetBase = Number.isFinite(envBudgetRaw) && envBudgetRaw >= 1 ? envBudgetRaw : 1024;
+        const useThinking = envThinkingEnabled && supportsThinking(modelId);
+
+        // ツール設定はデフォルト（toolChoice 未指定）をそのまま使用
+        const toolConfig = buildToolConfig();
+
+        // Interleaved Thinking の beta ヘッダ（環境フラグ ON で常に付与を試行）
+        const interleavedEnabled = useThinking && envInterleaved;
+        if (interleavedEnabled) betaTags.push('interleaved-thinking-2025-05-14');
         if (betaTags.length) additionalModelRequestFields['anthropic_beta'] = betaTags;
+
+        // thinking フィールド
+        if (useThinking) {
+          // 非 interleaved では budget_tokens < max_tokens を保証
+          const budget = (!interleavedEnabled && thinkingBudgetBase >= maxTokens) ? Math.max(1, maxTokens - 1) : Math.max(1024, thinkingBudgetBase);
+          additionalModelRequestFields['thinking'] = { type: 'enabled', budget_tokens: budget };
+          try { console.log(`[Thinking] enabled model=${modelId} interleaved=${interleavedEnabled} budget_tokens=${budget} max_tokens=${maxTokens}`); } catch {}
+        }
+
+        const inferenceConfig: any = useThinking ? { maxTokens } : { maxTokens, temperature: 0 };
+
+        try { console.log(`[Debug] toolChoice: ${JSON.stringify((toolConfig as any)?.toolChoice)}`); } catch {}
 
         const cmd = new ConverseCommand({
           modelId,
           system,
           toolConfig,
           messages: currentMessages as any,
-          inferenceConfig: { maxTokens: 4096, temperature: 0 },
+          inferenceConfig,
           additionalModelRequestFields,
         });
         if (Object.keys(additionalModelRequestFields).length) {
@@ -127,7 +161,7 @@ export async function converseLoop(
             system,
             toolConfig,
             messages: currentMessages,
-            inferenceConfig: { maxTokens: 4096, temperature: 0 },
+            inferenceConfig,
             additionalModelRequestFields,
           },
         });
@@ -140,8 +174,53 @@ export async function converseLoop(
             let textOut: string | undefined = undefined;
             const content = out?.message?.content ?? [];
             for (const block of content) if (block?.text) textOut = (textOut ?? '') + block.text;
+            // Thinking ブロックのログ出力
+            let thinkingJoined: string | undefined = undefined;
+            try {
+              const types: string[] = [];
+              const thinkParts: string[] = [];
+              for (const block of content) {
+                try {
+                  const hasReasoning = !!(block && (block as any).reasoningContent && (block as any).reasoningContent.reasoningText && (block as any).reasoningContent.reasoningText.text);
+                  const t = typeof (block as any)?.type === 'string'
+                    ? (block as any).type
+                    : ((block as any)?.thinking || hasReasoning)
+                      ? 'thinking'
+                      : ((block as any)?.text
+                        ? 'text'
+                        : ((block as any)?.toolUse ? 'tool_use' : 'unknown'));
+                  types.push(String(t));
+                } catch {}
+                if ((block as any)?.thinking) {
+                  thinkParts.push(String((block as any).thinking));
+                } else {
+                  try {
+                    const rt = (block as any)?.reasoningContent?.reasoningText?.text;
+                    if (typeof rt === 'string' && rt.trim().length > 0) thinkParts.push(rt);
+                  } catch {}
+                }
+              }
+              try {
+                console.log(`[Debug][content-types] ${JSON.stringify(types)}`);
+                const dump = (obj: any) => {
+                  try { const s = JSON.stringify(obj); return s.length > 1200 ? s.slice(0, 1200) + '…' : s; } catch { return String(obj); }
+                };
+                if (Array.isArray(content) && content.length) {
+                  console.log(`[Debug][content[0]] ${dump(content[0])}`);
+                  if (content.length > 1) console.log(`[Debug][content[1]] ${dump(content[1])}`);
+                }
+              } catch {}
+              if (thinkParts.length) {
+                thinkingJoined = thinkParts.join('\n');
+                const preview = thinkingJoined.length > 1200 ? (thinkingJoined.slice(0, 1200) + '…') : thinkingJoined;
+                console.log(`[Thinking][preview] ${preview}`);
+              } else {
+                console.log('[Thinking] thinking blocks were not present in the response content.');
+              }
+            } catch {}
             const payload: any = { usage, response: res };
             if (typeof textOut === 'string') payload.outputText = textOut;
+            if (typeof thinkingJoined === 'string') (payload as any).thinking = thinkingJoined;
             recordBedrockCallSuccess(obsHandle, payload);
           } catch {}
           response = res;

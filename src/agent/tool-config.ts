@@ -175,7 +175,6 @@ export function buildToolConfig(): ToolConfiguration {
         },
       },
     ],
-    toolChoice: { auto: {} },
   } as ToolConfiguration;
 }
 

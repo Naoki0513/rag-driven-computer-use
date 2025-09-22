@@ -66,7 +66,7 @@ export function recordBedrockCallStart(ctx: BedrockCallContext): BedrockCallHand
   }
 }
 
-export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { outputText?: string; usage?: any; response?: any }): void {
+export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { outputText?: string; usage?: any; response?: any; thinking?: string }): void {
   try {
     const gen: any = handle?.generation;
     if (!gen) return;
@@ -75,6 +75,7 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
       if (payload?.response?.ResponseMetadata) meta.ResponseMetadata = payload.response.ResponseMetadata;
     } catch {}
     if (typeof payload?.outputText === 'string') meta.outputText = payload.outputText;
+    if (typeof (payload as any)?.thinking === 'string') meta.thinking = (payload as any).thinking;
 
     // ===== Bedrock usage → Langfuse usageDetails へのマッピング =====
     function toInt(n: any): number | undefined {
