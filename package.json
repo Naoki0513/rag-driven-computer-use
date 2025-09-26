@@ -4,12 +4,15 @@
   "description": "DuckDB + CSV に対して自然言語でクエリを実行できるAIエージェントと、Webアプリケーションの状態遷移をクロールするツールセットです。",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:e2e",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "start:agent": "node dist/agent/cli.js",
     "start:crawler": "node dist/crawler/main.js",
-    "playwright:install": "playwright install --with-deps"
+    "playwright:install": "playwright install --with-deps",
+    "test:e2e:crawler": "node dist/tests/e2e-crawler-books.js",
+    "test:e2e:agent": "node dist/tests/e2e-agent-books.js",
+    "test:e2e": "npm run build && npm run test:e2e:crawler && npm run test:e2e:agent"
   },
   "keywords": [],
   "author": "",

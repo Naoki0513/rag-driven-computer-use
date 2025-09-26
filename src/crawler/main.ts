@@ -26,7 +26,7 @@ async function main() {
   const maxUrls = Number.isFinite(maxUrlsEnv) && maxUrlsEnv > 0 ? Math.trunc(maxUrlsEnv) : undefined;
   const targetUrls: string[] = targetsEnv
     ? targetsEnv.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
-    : ['http://the-agent-company.com:3000/'];
+    : ['https://books.toscrape.com/'];
 
   // CSV: 常に出力（URLのみモードは廃止）
   const csv = new CsvWriter(config.csvPath || 'output/crawl.csv', [
