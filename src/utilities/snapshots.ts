@@ -3,7 +3,6 @@ import type { NodeState } from './types.js';
 import { normalizeUrl } from './url.js';
 import { computeSha256Hex } from './text.js';
 import { getTimeoutMs } from './timeout.js';
-import { NodeHtmlMarkdown } from 'node-html-markdown';
 
 export async function captureNode(page: Page, options: { depth: number }): Promise<NodeState> {
   const t = getTimeoutMs('crawler');
@@ -18,8 +17,6 @@ export async function captureNode(page: Page, options: { depth: number }): Promi
   try {
     await page.waitForSelector('.rc-room, .rc-message-box, .sidebar, main', { state: 'attached', timeout: Math.min(3000, t) });
   } catch {}
-  const html = await page.content();
-  const snapshotInMd = convertHtmlToMarkdown(html);
   const snapshotForAI = await getSnapshotForAI(page);
   const urlObj = new URL(normalizedUrl);
   const site = `${urlObj.protocol}//${urlObj.host}`;
@@ -29,16 +26,12 @@ export async function captureNode(page: Page, options: { depth: number }): Promi
     if (!snapshotForAI || snapshotForAI.trim().length === 0) {
       console.warn(`[captureNode] snapshotForAI is empty for ${normalizedUrl}`);
     }
-    if (!snapshotInMd || snapshotInMd.trim().length === 0) {
-      console.warn(`[captureNode] snapshotInMd is empty for ${normalizedUrl}`);
-    }
   } catch {}
 
   return {
     site,
     url: normalizedUrl,
     snapshotForAI,
-    snapshotInMd,
     snapshotHash,
     timestamp: new Date().toISOString(),
     depth: options.depth,
@@ -88,25 +81,6 @@ export async function getSnapshotForAI(page: Page): Promise<string> {
     return lines.join('\n');
   });
   return typeof fallback === 'string' ? fallback : '';
-}
-
-function convertHtmlToMarkdown(html: string): string {
-  try {
-    // 目に見える内容に不要なタグを除去
-    const cleaned = html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '');
-
-    const md = NodeHtmlMarkdown.translate(cleaned, {
-      keepDataImages: false,
-      useLinkReferenceDefinitions: false,
-      maxConsecutiveNewlines: 2,
-    } as any);
-    return (md || '').trim();
-  } catch {
-    return '';
-  }
 }
 
 

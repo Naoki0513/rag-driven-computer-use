@@ -2,7 +2,6 @@ export interface NodeState {
   site: string;
   url: string;
   snapshotForAI: string;
-  snapshotInMd: string;
   snapshotHash: string;
   timestamp: string;
   depth: number;

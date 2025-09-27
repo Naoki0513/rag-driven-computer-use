@@ -25,15 +25,26 @@ export async function login(page: Page, config: SessionConfig): Promise<void> {
     try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
     await page.waitForTimeout(Math.min(2000, t));
   }
-  const loginInput = await page.$('input[name="emailOrUsername"], input[name="username"], input[name="email"], input[type="email"], input[type="text"][placeholder*="user" i]');
-  const passwordInput = await page.$('input[type="password"]');
-  const submitButton = await page.$('button.login, button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in")');
-  if (loginInput && passwordInput && submitButton) {
-    await loginInput.fill(config.loginUser);
-    await passwordInput.fill(config.loginPass);
-    await submitButton.click({ timeout: t });
-    await page.waitForTimeout(Math.min(5000, t));
-  }
+  try {
+    const userLocator = page.locator('input[name="emailOrUsername"], input[name="username"], input[name="email"], input[type="email"], input[type="text"][placeholder*="user" i]').first();
+    const passLocator = page.locator('input[type="password"]').first();
+    const submitLocator = page.locator('button.login, button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Sign in"), button:has-text("Log in")').first();
+
+    const [userVisible, passVisible, submitVisible] = await Promise.all([
+      userLocator.isVisible().catch(() => false),
+      passLocator.isVisible().catch(() => false),
+      submitLocator.isVisible().catch(() => false),
+    ]);
+
+    if (userVisible && passVisible) {
+      await userLocator.fill(config.loginUser, { timeout: Math.min(2000, t) }).catch(() => {});
+      await passLocator.fill(config.loginPass, { timeout: Math.min(2000, t) }).catch(() => {});
+      if (submitVisible) {
+        await submitLocator.click({ timeout: Math.min(3000, t) }).catch(() => {});
+      }
+      await page.waitForTimeout(Math.min(5000, t)).catch(() => {});
+    }
+  } catch {}
 }
 
 

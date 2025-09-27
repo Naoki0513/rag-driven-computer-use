@@ -47,13 +47,11 @@ export class CsvWriter {
   async appendNode(node: NodeState): Promise<void> {
     if (!this.stream) throw new Error('CSV writer not initialized');
     const snapshotForAIJson = JSON.stringify(node.snapshotForAI);
-    const snapshotInMdJson = JSON.stringify(node.snapshotInMd);
     await this.appendRow([
       node.url,
       this.nextId,
       node.site,
       snapshotForAIJson,
-      snapshotInMdJson,
       node.timestamp,
     ]);
     this.nextId += 1;

@@ -15,10 +15,12 @@ async function main() {
   const config = {
     loginUser: env.CRAWLER_LOGIN_USER ?? 'theagentcompany',
     loginPass: env.CRAWLER_LOGIN_PASS ?? 'theagentcompany',
+    authEnabled: toBool(env.CRAWLER_AUTH_ENABLED, true),
     headful: toBool(env.CRAWLER_HEADFUL, false),
     csvPath: outputFileEnv || 'output/crawl.csv',
     clearCsv: toBool(env.CRAWLER_CLEAR_CSV, false),
     dedupeElementsPerBase: toBool(env.CRAWLER_DEDUPE_ELEMENTS_PER_BASE, false),
+    storageStatePath: (env.CRAWLER_STORAGE_STATE_FILE || '').toString().trim() || undefined,
   } as const;
 
   const targetsEnv = (env.CRAWLER_TARGET_URLS || '').trim();
@@ -34,7 +36,6 @@ async function main() {
     'id',
     'site',
     'snapshotfor AI',
-    'snapshotin MD',
     'timestamp',
   ], { clear: !!config.clearCsv });
   await csv.initialize();
@@ -68,10 +69,14 @@ async function main() {
       loginPass: config.loginPass,
       headful: !!config.headful,
       dedupeElementsPerBase: !!config.dedupeElementsPerBase,
+      storageStatePath: config.storageStatePath,
       onDiscovered,
       onBaseCapture,
       shouldStop: () => (typeof maxUrls === 'number' ? fullWritten.size >= maxUrls : false),
     };
+    if (config.authEnabled === false) {
+      cfg.skipLogin = true;
+    }
     // url-collector 側へ maxUrls は渡さない（収集は継続し、CSV 書込みのみ本ファイルで制御）
     const collected = await collectAllInternalUrls(cfg).catch((e) => {
       try { console.warn(`[crawler] collect error for base=${base}: ${String((e as any)?.message ?? e)}`); } catch {}

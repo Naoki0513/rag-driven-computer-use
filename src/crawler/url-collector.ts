@@ -15,6 +15,10 @@ type CollectorConfig = {
   loginUser: string;
   loginPass: string;
   headful: boolean;
+  // Playwright storageState JSON のパス（指定時は既存セッションを使用し、明示ログインはスキップ）
+  storageStatePath?: string;
+  // 認証（ログイン）をスキップするフラグ
+  skipLogin?: boolean;
   maxUrls?: number;
   onDiscovered?: (url: string) => Promise<void> | void;
   onBaseCapture?: (node: NodeState) => Promise<void> | void;
@@ -25,7 +29,7 @@ type CollectorConfig = {
 export async function collectUrlsFromInitialPage(config: CollectorConfig): Promise<string[]> {
   const discoveredUrls = new Set<string>();
   const browser = await chromium.launch({ headless: !config.headful });
-  const context = await browser.newContext();
+  const context = await browser.newContext(config.storageStatePath ? { storageState: config.storageStatePath } : {});
   const t = getTimeoutMs('crawler');
   try { (context as any).setDefaultTimeout?.(t); } catch {}
   try { (context as any).setDefaultNavigationTimeout?.(t); } catch {}
@@ -39,7 +43,10 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
     const startUrl = config.loginUrl || config.targetUrl;
     await page.goto(startUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
     try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
-    await login(page, config);
+    // storageState が指定されておらず、かつ skipLogin でない場合のみログインを試行
+    if (!config.storageStatePath && !config.skipLogin) {
+      await login(page, config);
+    }
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
     await page.waitForLoadState('load', { timeout: Math.min(10000, t) }).catch(() => {});
     await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: Math.min(5000, t) }).catch(() => {});
@@ -100,7 +107,7 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
   // CSV への書き込み件数上限は main 側で制御するため、ここでは max を用いた早期終了は行わない
 
   const browser = await chromium.launch({ headless: !config.headful });
-  const context = await browser.newContext();
+  const context = await browser.newContext(config.storageStatePath ? { storageState: config.storageStatePath } : {});
   const t = getTimeoutMs('crawler');
   try { (context as any).setDefaultTimeout?.(t); } catch {}
   try { (context as any).setDefaultNavigationTimeout?.(t); } catch {}
@@ -115,7 +122,10 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     if (config.shouldStop?.()) return [];
     await page.goto(startUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
     try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
-    await login(page, config);
+    // storageState が指定されておらず、かつ skipLogin でない場合のみログインを試行
+    if (!config.storageStatePath && !config.skipLogin) {
+      await login(page, config);
+    }
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
     await page.waitForLoadState('load', { timeout: Math.min(10000, t) }).catch(() => {});
     await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: Math.min(5000, t) }).catch(() => {});

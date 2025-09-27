@@ -85,6 +85,49 @@ async function validateBooksCrawl(csvPath: string): Promise<void> {
   if (lines.length <= 1) throw new Error('CSV にデータ行がありません');
   const dataRows = lines.length - 1;
   if (dataRows < 100) throw new Error(`データ行が少なすぎます: 期待>=100, 実際=${dataRows}`);
+  // DuckDB による基本検証
+  await duckdbValidate(csvPath);
+}
+
+async function duckdbValidate(csvPath: string): Promise<void> {
+  let DuckDB: any = null;
+  try {
+    const mod: any = await import('duckdb');
+    DuckDB = (mod && mod.default) ? mod.default : mod;
+  } catch {
+    throw new Error('[E2E][crawler] DuckDB モジュールが見つからないため検証を実行できません');
+  }
+  const db = new DuckDB.Database(':memory:');
+  const conn = db.connect();
+  // CREATE VIEW with read_csv_auto
+  await new Promise<void>((resolve, reject) => {
+    conn.run(
+      'CREATE VIEW v AS SELECT * FROM read_csv_auto(?, HEADER=TRUE, ALL_VARCHAR=TRUE, SAMPLE_SIZE=-1)',
+      [csvPath],
+      (err: unknown) => (err ? reject(err) : resolve()),
+    );
+  });
+  const all = (sql: string, params: any[] = []) => new Promise<any[]>((resolve, reject) => {
+    conn.all(sql, params, (err: unknown, rows: any[]) => (err ? reject(err) : resolve(rows || [])));
+  });
+  const getSingle = async (sql: string, params: any[] = []) => {
+    const rows = await all(sql, params);
+    return rows[0] || {};
+  };
+  const rowCnt = await getSingle('SELECT COUNT(*) AS cnt FROM v');
+  if (!rowCnt.cnt || Number(rowCnt.cnt) < 100) throw new Error('DuckDB: 行数検証に失敗しました');
+  const urlBad = await getSingle('SELECT COUNT(*) AS bad FROM v WHERE COALESCE("URL", \'\') = \'\'');
+  if (Number(urlBad.bad) !== 0) throw new Error('DuckDB: URL 列に空値があります');
+  const idBad = await getSingle('SELECT COUNT(*) AS bad FROM v WHERE TRY_CAST(NULLIF("id", \'\') AS BIGINT) IS NULL');
+  if (Number(idBad.bad) !== 0) throw new Error('DuckDB: id 列が数値に変換できない行があります');
+  const siteDistinct = await getSingle('SELECT COUNT(DISTINCT site) AS n FROM v');
+  if (!siteDistinct.n || Number(siteDistinct.n) < 1) throw new Error('DuckDB: site 列が不正です');
+  const tsBad = await getSingle('SELECT COUNT(*) AS bad FROM v WHERE COALESCE("timestamp", \'\') = \'\'');
+  if (Number(tsBad.bad) !== 0) throw new Error('DuckDB: timestamp 列に空値があります');
+  // スナップショット列の基本チェック（列存在とある程度の非空）
+  const aiNonEmpty = await getSingle('SELECT COUNT(*) AS c FROM v WHERE LENGTH(COALESCE("snapshotfor AI", \'\')) > 0');
+  if (!aiNonEmpty.c || Number(aiNonEmpty.c) < 1) throw new Error('DuckDB: "snapshotfor AI" 列が空です');
+  await new Promise<void>((resolve) => conn.close(() => resolve()));
 }
 
 async function main() {
