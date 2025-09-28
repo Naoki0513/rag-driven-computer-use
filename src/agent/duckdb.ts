@@ -23,7 +23,7 @@ async function initIfNeeded(): Promise<void> {
   _initialized = true;
 }
 
-export async function exec(sql: string, params: any[] = []): Promise<void> {
+async function exec(sql: string, params: any[] = []): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const con = _con || (_db && _db.connect());
     if (!con) return reject(new Error('DuckDB connection not available'));

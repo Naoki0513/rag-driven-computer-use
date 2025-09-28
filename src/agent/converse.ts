@@ -31,19 +31,7 @@ function supportsThinking(modelId: string): boolean {
     || id.includes('anthropic.claude-3-7-sonnet-20250219');
 }
 
-// リージョンのスロットリング健康状態（単純なクールダウン）
-const regionThrottleUntil = new Map<string, number>();
-function isRegionCoolingDown(region: string): boolean {
-  const until = regionThrottleUntil.get(region) ?? 0;
-  return Date.now() < until;
-}
-function markRegionThrottled(region: string): void {
-  const ms = Math.max(1, Math.trunc(Number(process.env.AGENT_REGION_THROTTLE_COOLDOWN_MS || 15000)));
-  regionThrottleUntil.set(region, Date.now() + ms);
-}
-function clearRegionThrottle(region: string): void {
-  regionThrottleUntil.delete(region);
-}
+// （未使用のリージョンスロットリング補助関数群を削除し、簡素化）
 
 export async function converseLoop(
   query: string,

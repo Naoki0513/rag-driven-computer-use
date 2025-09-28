@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import { collectAllInternalUrls } from './url-collector.js';
 import { CsvWriter } from './csv.js';
 import { captureNode } from '../utilities/snapshots.js';
@@ -15,12 +16,16 @@ async function main() {
   const config = {
     loginUser: env.CRAWLER_LOGIN_USER ?? 'theagentcompany',
     loginPass: env.CRAWLER_LOGIN_PASS ?? 'theagentcompany',
+    loginUrl: (env.CRAWLER_LOGIN_URL || '').toString().trim() || undefined,
     authEnabled: toBool(env.CRAWLER_AUTH_ENABLED, true),
     headful: toBool(env.CRAWLER_HEADFUL, false),
     csvPath: outputFileEnv || 'output/crawl.csv',
     clearCsv: toBool(env.CRAWLER_CLEAR_CSV, false),
     dedupeElementsPerBase: toBool(env.CRAWLER_DEDUPE_ELEMENTS_PER_BASE, false),
-    storageStatePath: (env.CRAWLER_STORAGE_STATE_FILE || '').toString().trim() || undefined,
+    storageStatePath: (() => {
+      const p = (env.CRAWLER_STORAGE_STATE_FILE || '').toString().trim();
+      return p && fs.existsSync(p) ? p : undefined;
+    })(),
   } as const;
 
   const targetsEnv = (env.CRAWLER_TARGET_URLS || '').trim();
@@ -65,6 +70,7 @@ async function main() {
   for (const base of targetUrls) {
     const cfg: any = {
       targetUrl: base,
+      loginUrl: config.loginUrl,
       loginUser: config.loginUser,
       loginPass: config.loginPass,
       headful: !!config.headful,
@@ -74,9 +80,7 @@ async function main() {
       onBaseCapture,
       shouldStop: () => (typeof maxUrls === 'number' ? fullWritten.size >= maxUrls : false),
     };
-    if (config.authEnabled === false) {
-      cfg.skipLogin = true;
-    }
+    cfg.skipLogin = config.authEnabled === false;
     // url-collector 側へ maxUrls は渡さない（収集は継続し、CSV 書込みのみ本ファイルで制御）
     const collected = await collectAllInternalUrls(cfg).catch((e) => {
       try { console.warn(`[crawler] collect error for base=${base}: ${String((e as any)?.message ?? e)}`); } catch {}

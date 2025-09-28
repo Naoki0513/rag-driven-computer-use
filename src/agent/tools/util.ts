@@ -1,6 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Locator } from 'playwright';
-import { captureNode, getSnapshotForAI } from '../../utilities/snapshots.js';
+import { captureNode } from '../../utilities/snapshots.js';
 import { getTimeoutMs } from '../../utilities/timeout.js';
 import { findRoleAndNameByRef } from '../../utilities/text.js';
 import { promises as fs } from 'fs';
@@ -17,8 +17,14 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   if (sharedBrowser && sharedContext && sharedPage) {
     return { browser: sharedBrowser, context: sharedContext, page: sharedPage };
   }
-  const headful = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
-  sharedBrowser = await chromium.launch({ headless: !headful });
+  const headfulEnv = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
+  // DISPLAY が無い環境で headful を要求された場合は自動的に headless にフォールバック
+  const hasDisplay = !!String(process.env.DISPLAY || '').trim();
+  const launchHeadless = headfulEnv && !hasDisplay ? true : !headfulEnv;
+  if (headfulEnv && !hasDisplay) {
+    try { console.log('[Playwright] DISPLAY が見つからないため headless にフォールバックします'); } catch {}
+  }
+  sharedBrowser = await chromium.launch({ headless: launchHeadless });
   sharedContext = await sharedBrowser.newContext();
   const t = getTimeoutMs('agent');
   try { (sharedContext as any).setDefaultTimeout?.(t); } catch {}
@@ -56,7 +62,7 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
   }
 }
 
-export async function takeSnapshots(page: Page): Promise<{ text: string; hash: string; url: string }> {
+async function takeSnapshots(page: Page): Promise<{ text: string; hash: string; url: string }> {
   // クローラと同一の取得手順（networkidle 待機 + 追加待機）で撮影する
   const node = await captureNode(page, { depth: 0 });
   return { text: node.snapshotForAI, hash: node.snapshotHash, url: node.url };

@@ -100,15 +100,18 @@ async function duckdbValidate(csvPath: string): Promise<void> {
   const db = new DuckDB.Database(':memory:');
   const conn = db.connect();
   // CREATE VIEW with read_csv_auto
+  const escapedPath = csvPath.replace(/'/g, "''");
+  const createViewSql = `CREATE VIEW v AS SELECT * FROM read_csv_auto('${escapedPath}', HEADER=TRUE, ALL_VARCHAR=TRUE, SAMPLE_SIZE=-1)`;
   await new Promise<void>((resolve, reject) => {
-    conn.run(
-      'CREATE VIEW v AS SELECT * FROM read_csv_auto(?, HEADER=TRUE, ALL_VARCHAR=TRUE, SAMPLE_SIZE=-1)',
-      [csvPath],
-      (err: unknown) => (err ? reject(err) : resolve()),
-    );
+    conn.run(createViewSql, (err: unknown) => (err ? reject(err) : resolve()));
   });
   const all = (sql: string, params: any[] = []) => new Promise<any[]>((resolve, reject) => {
-    conn.all(sql, params, (err: unknown, rows: any[]) => (err ? reject(err) : resolve(rows || [])));
+    const cb = (err: unknown, rows: any[]) => (err ? reject(err) : resolve(rows || []));
+    if (Array.isArray(params) && params.length > 0) {
+      (conn as any).all(sql, params, cb);
+    } else {
+      (conn as any).all(sql, cb);
+    }
   });
   const getSingle = async (sql: string, params: any[] = []) => {
     const rows = await all(sql, params);
