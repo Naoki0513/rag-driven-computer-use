@@ -14,7 +14,13 @@ export async function runQuery(query: string): Promise<string> {
       return JSON.stringify(payload);
     }
     const lines: string[] = [];
-    rows.slice(0, 20).forEach((rec, i) => lines.push(`行 ${i + 1}: ${JSON.stringify(rec)}`));
+    rows.slice(0, 20).forEach((rec, i) => {
+      // BigInt を文字列に変換してシリアライズ可能にする
+      const serializable = JSON.parse(JSON.stringify(rec, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ));
+      lines.push(`行 ${i + 1}: ${JSON.stringify(serializable)}`);
+    });
     if (rows.length > 20) lines.push(`\n... 他 ${rows.length - 20} 行`);
     const payload = await attachTodos({ ok: true, result: lines.join('\n') });
     return JSON.stringify(payload);

@@ -19,13 +19,45 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   }
   const headfulEnv = String(process.env.AGENT_HEADFUL ?? 'false').toLowerCase() === 'true';
   // DISPLAY が無い環境で headful を要求された場合は自動的に headless にフォールバック
-  const hasDisplay = !!String(process.env.DISPLAY || '').trim();
+  const displayValue = String(process.env.DISPLAY || '').trim();
+  const hasDisplay = !!displayValue;
   const launchHeadless = headfulEnv && !hasDisplay ? true : !headfulEnv;
+  
+  console.log('[Playwright] ブラウザ起動設定:');
+  console.log(`  - AGENT_HEADFUL: ${headfulEnv ? 'true (GUI表示モード)' : 'false (ヘッドレス)'}`);
+  console.log(`  - DISPLAY: "${displayValue}" ${hasDisplay ? '(設定あり)' : '(未設定)'}`);
+  console.log(`  - 実際の起動モード: ${launchHeadless ? 'headless' : 'headful'}`);
+  
   if (headfulEnv && !hasDisplay) {
-    try { console.log('[Playwright] DISPLAY が見つからないため headless にフォールバックします'); } catch {}
+    console.log('[Playwright] ⚠️ DISPLAY が見つからないため headless にフォールバックします');
+  } else if (headfulEnv && hasDisplay) {
+    console.log(`[Playwright] ✓ headful モードで起動します（VNC: DISPLAY=${displayValue}）`);
   }
-  sharedBrowser = await chromium.launch({ headless: launchHeadless });
-  sharedContext = await sharedBrowser.newContext();
+  
+  try {
+    sharedBrowser = await chromium.launch({ headless: launchHeadless });
+    console.log('[Playwright] ✓ Chromium が正常に起動しました');
+  } catch (e: any) {
+    console.error('[Playwright] ✗ Chromium の起動に失敗しました:', e?.message ?? e);
+    throw e;
+  }
+  
+  // AGENT_STORAGE_STATE_FILE 環境変数からストレージステート（認証情報等）を読み込む
+  const storageStateFile = String(process.env.AGENT_STORAGE_STATE_FILE || '').trim();
+  const contextOptions: any = {};
+  if (storageStateFile) {
+    try {
+      // ファイルを読み込んでJSONとして解析
+      const content = await fs.readFile(storageStateFile, 'utf-8');
+      const storageState = JSON.parse(content);
+      contextOptions.storageState = storageState;
+      console.log(`[OK] ストレージステートを読み込みました: ${storageStateFile} (cookies: ${storageState.cookies?.length || 0}件)`);
+    } catch (e: any) {
+      console.log(`[警告] ストレージステート読み込み中にエラーが発生: ${e?.message ?? e}`);
+    }
+  }
+  
+  sharedContext = await sharedBrowser.newContext(contextOptions);
   const t = getTimeoutMs('agent');
   try { (sharedContext as any).setDefaultTimeout?.(t); } catch {}
   try { (sharedContext as any).setDefaultNavigationTimeout?.(t); } catch {}
@@ -345,10 +377,155 @@ export async function readTodoFileContent(): Promise<{ path: string; content: st
 export async function attachTodos<T extends Record<string, any>>(payload: T): Promise<T & { todos: { path: string; content: string } }>{
   try {
     const todos = await readTodoFileContent();
+    // WebArena trajectory記録（軽量フック）
+    try { await recordWebArenaTrajectoryStep(payload); } catch {}
     return Object.assign(payload, { todos });
   } catch {
     return Object.assign(payload, { todos: { path: 'todo.md', content: '' } });
   }
+}
+
+// ===== WebArena Trajectory記録 =====
+type WebArenaStateInfo = {
+  observation: { text: string; image: null };
+  info: { page: { url: string; content: string }; fail_error: string; observation_metadata: { obs_nodes_info: Record<string, any> } };
+};
+type WebArenaAction = {
+  action_type: number; // ActionTypes.STOPなど
+  answer: string;
+  raw_prediction: string;
+  coords: number[];
+  element_role: number;
+  element_name: string;
+  text: number[];
+  page_number: number;
+  url: string;
+  nth: number;
+  element_id: string;
+  direction: string;
+  key_comb: string;
+  pw_code: string;
+};
+type WebArenaTrajectory = Array<WebArenaStateInfo | WebArenaAction>;
+
+const _webArenaTrajectory: WebArenaTrajectory = [];
+let _lastActionPayload: any = null;
+let _trajectoryInitialized = false;
+
+export async function initWebArenaTrajectory(): Promise<void> {
+  try {
+    _webArenaTrajectory.length = 0;
+    _lastActionPayload = null;
+    _trajectoryInitialized = false;
+  } catch {}
+}
+
+async function recordWebArenaTrajectoryStep(payload: any): Promise<void> {
+  try {
+    const action = String(payload?.action || '').trim();
+    if (!action || action === 'snapshot_search' || action === 'run_query' || action === 'batch') return;
+    
+    const { page } = await ensureSharedBrowserStarted();
+    const url = String(payload?.snapshots?.url || page.url());
+    const snapshotText = getResolutionSnapshotText() || '';
+    
+    // 初回のみ: 初期StateInfo追加（WebArenaのenv.reset()相当）
+    if (!_trajectoryInitialized) {
+      const initialState: WebArenaStateInfo = {
+        observation: { text: snapshotText, image: null },
+        info: {
+          page: { url, content: '' },
+          fail_error: '',
+          observation_metadata: { obs_nodes_info: {} }
+        }
+      };
+      _webArenaTrajectory.push(initialState);
+      _trajectoryInitialized = true;
+    }
+    
+    // StateInfo追加（前回アクションの実行結果）
+    if (_lastActionPayload) {
+      const stateInfo: WebArenaStateInfo = {
+        observation: { text: snapshotText, image: null },
+        info: {
+          page: { url, content: '' }, // contentは評価時に不要
+          fail_error: typeof payload.ok === 'string' ? payload.ok : '',
+          observation_metadata: { obs_nodes_info: {} }
+        }
+      };
+      _webArenaTrajectory.push(stateInfo);
+    }
+    
+    // Action追加（簡易マッピング）
+    const waAction: WebArenaAction = {
+      action_type: action === 'goto' ? 13 : action === 'click' ? 6 : action === 'input' ? 7 : action === 'press' ? 2 : 17, // STOP=17
+      answer: '',
+      raw_prediction: JSON.stringify(payload),
+      coords: [0, 0],
+      element_role: 0,
+      element_name: String(payload?.target?.name || payload?.ref || ''),
+      text: [],
+      page_number: 0,
+      url: action === 'goto' ? String(payload?.url || '') : '',
+      nth: 0,
+      element_id: String(payload?.ref || ''),
+      direction: '',
+      key_comb: action === 'press' ? String(payload?.key || '') : '',
+      pw_code: '',
+    };
+    _webArenaTrajectory.push(waAction);
+    _lastActionPayload = payload;
+  } catch {}
+}
+
+export async function finalizeWebArenaTrajectory(answer: string): Promise<void> {
+  try {
+    const { page } = await ensureSharedBrowserStarted();
+    
+    // 最終StateInfo
+    const finalState: WebArenaStateInfo = {
+      observation: { text: getResolutionSnapshotText() || '', image: null },
+      info: {
+        page: { url: page.url(), content: '' },
+        fail_error: '',
+        observation_metadata: { obs_nodes_info: {} }
+      }
+    };
+    _webArenaTrajectory.push(finalState);
+    
+    // STOP action
+    const stopAction: WebArenaAction = {
+      action_type: 17, // ActionTypes.STOP
+      answer,
+      raw_prediction: `stop [${answer}]`,
+      coords: [0, 0],
+      element_role: 0,
+      element_name: '',
+      text: [],
+      page_number: 0,
+      url: '',
+      nth: 0,
+      element_id: '',
+      direction: '',
+      key_comb: '',
+      pw_code: '',
+    };
+    _webArenaTrajectory.push(stopAction);
+  } catch {}
+}
+
+export async function saveWebArenaTrajectory(outPath: string, cdpEndpoint: string): Promise<void> {
+  const absPath = path.resolve(outPath);
+  await fs.mkdir(path.dirname(absPath), { recursive: true }).catch(()=>{});
+  await fs.writeFile(
+    absPath,
+    JSON.stringify({ trajectory: _webArenaTrajectory, cdp_endpoint: cdpEndpoint, final_url: '' }, null, 2),
+    'utf-8'
+  );
+}
+
+export function getWebArenaTrajectory(): WebArenaTrajectory {
+  return _webArenaTrajectory;
 }
 
 // ===== スナップショット チャンク化 + リランク =====

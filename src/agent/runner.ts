@@ -1,10 +1,11 @@
 import { converseLoop } from './converse.js';
 import { getDatabaseSchemaString } from './schema.js';
 import { createSystemPromptWithSchema } from './prompt.js';
-import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay } from './tools/util.js';
+import { ensureSharedBrowserStarted, closeSharedBrowserWithDelay, finalizeWebArenaTrajectory, saveWebArenaTrajectory, initWebArenaTrajectory } from './tools/util.js';
 import { startSessionTrace } from './observability.js';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 type ModelCandidate = { modelId: string; region: string };
 
@@ -91,11 +92,46 @@ function buildModelCandidates(): ModelCandidate[] {
 
 export async function runSingleQuery(query: string): Promise<void> {
   console.log('WebGraph-Agent DuckDB/CSV AI エージェントを起動しています...');
-  // CSV パスのチェック
+  console.log('\n========================================');
+  console.log('[環境変数] 詳細情報');
+  console.log('========================================');
+  
+  // 環境変数の詳細出力
   const csvPath = String(process.env.AGENT_CSV_PATH || '').trim() || 'output/crawl.csv';
-  console.log(`[Env] CSV Path = ${csvPath}`);
+  console.log(`CSV Path: ${csvPath}`);
+  
+  const rawRegions = String(process.env.AGENT_AWS_REGION ?? '').trim();
+  console.log(`AGENT_AWS_REGION (生): "${rawRegions}"`);
+  const parsedRegions = parseRegionsFromEnv();
+  console.log(`AGENT_AWS_REGION (解析後): [${parsedRegions.join(', ')}] (${parsedRegions.length}個)`);
+  
+  const modelIds = String(process.env.AGENT_BEDROCK_MODEL_IDS ?? process.env.AGENT_BEDROCK_MODEL_ID ?? '').trim();
+  console.log(`AGENT_BEDROCK_MODEL_IDS: "${modelIds}"`);
+  
+  const headful = String(process.env.AGENT_HEADFUL ?? 'false').trim();
+  const display = String(process.env.DISPLAY ?? '').trim();
+  console.log(`AGENT_HEADFUL: ${headful}`);
+  console.log(`DISPLAY: "${display}"`);
+  
+  const thinkingEnabled = String(process.env.AGENT_THINKING_ENABLED ?? 'false').trim();
+  console.log(`AGENT_THINKING_ENABLED: ${thinkingEnabled}`);
+  
+  // AWS認証情報のチェック
+  const hasAwsKey = !!process.env.AWS_ACCESS_KEY_ID;
+  const hasAwsSecret = !!process.env.AWS_SECRET_ACCESS_KEY;
+  const hasAwsProfile = !!process.env.AWS_PROFILE;
+  console.log(`AWS認証: AccessKey=${hasAwsKey ? '✓' : '✗'} SecretKey=${hasAwsSecret ? '✓' : '✗'} Profile=${hasAwsProfile ? '✓' : '✗'}`);
+  if (!hasAwsKey && !hasAwsSecret && !hasAwsProfile) {
+    console.warn('[警告] AWS認証情報が設定されていない可能性があります');
+  }
+  console.log('========================================\n');
+  
   const candidates = buildModelCandidates();
   console.log(`[OK] 実行環境チェックに成功しました。モデル候補数=${candidates.length}`);
+  console.log(`[Env] モデル候補の詳細:`);
+  candidates.forEach((c, i) => {
+    console.log(`  ${i + 1}. ${c.modelId} @ ${c.region}`);
+  });
 
   // Langfuse セッション（1回の runSingleQuery を1セッションとして紐づけ）
   const sessionId = `agent-session-${Date.now()}`;
@@ -103,6 +139,10 @@ export async function runSingleQuery(query: string): Promise<void> {
 
   // まず最初にブラウザを起動（以降の実行で共有・再利用）
   await ensureSharedBrowserStarted();
+  
+  // WebArena Trajectory初期化
+  await initWebArenaTrajectory();
+  
   try {
     console.log('CSVスキーマを取得中...');
     const schema = await getDatabaseSchemaString();
@@ -132,9 +172,86 @@ export async function runSingleQuery(query: string): Promise<void> {
     } catch {
       console.log('\n現在の ToDo (todo.md): (ファイルなし)');
     }
+
+    // WebArena評価の実行（オプション）
+    const enableWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+    if (enableWebArenaEval) {
+      await runWebArenaEvaluation(query, fullText);
+    }
+  } catch (e: any) {
+    console.error('\n========================================');
+    console.error('[エラー] エージェント実行中にエラーが発生しました');
+    console.error('========================================');
+    console.error(`エラー種別: ${e?.name || 'Unknown'}`);
+    console.error(`エラーメッセージ: ${e?.message || e}`);
+    if (e?.stack) {
+      console.error('\nスタックトレース:');
+      console.error(e.stack);
+    }
+    if (e?.$metadata) {
+      console.error('\nAWS メタデータ:', JSON.stringify(e.$metadata, null, 2));
+    }
+    console.error('========================================\n');
+    throw e; // 上位のcli.tsで処理させるため再スロー
   } finally {
     // 完了時に5秒（または環境変数の指定 ms）待ってからクローズ
     await closeSharedBrowserWithDelay();
+  }
+}
+
+async function runWebArenaEvaluation(query: string, answer: string): Promise<void> {
+  try {
+    console.log('\n[WebArena] 評価を開始します...');
+    
+    // Trajectory確定
+    await finalizeWebArenaTrajectory(answer);
+    
+    // CDP Endpoint取得
+    const { browser, context } = await ensureSharedBrowserStarted();
+    const cdpEndpoint = (browser as any).wsEndpoint?.() || '';
+    
+    // Trajectory保存（タスクID付きで構造化）
+    const configFilePath = String(process.env.AGENT_WEBARENA_CONFIG_FILE || '').trim();
+    const taskId = configFilePath ? path.basename(configFilePath, '.json') : 'unknown';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    
+    const trajPath = String(process.env.AGENT_WEBARENA_TRAJECTORY_FILE || '').trim()
+      || path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
+    await saveWebArenaTrajectory(trajPath, cdpEndpoint);
+    console.log(`[WebArena] Trajectory保存: ${trajPath}`);
+    
+    // Python評価スクリプト実行
+    if (!configFilePath) {
+      console.log('[WebArena] AGENT_WEBARENA_CONFIG_FILE が未設定のため評価をスキップします');
+      return;
+    }
+    
+    const evalScript = path.resolve(__dirname, '../../scripts/evaluate_webarena.py');
+    console.log(`[WebArena] 評価実行: ${evalScript}`);
+    
+    const resultPath = path.resolve(process.cwd(), 'output', 'webarena', 'results', `task_${taskId}_${timestamp}.json`);
+    
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn('python3', [evalScript, trajPath, configFilePath, cdpEndpoint, resultPath], {
+        stdio: 'inherit',
+        cwd: process.cwd()
+      });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          console.log('[WebArena] 評価完了');
+          resolve();
+        } else {
+          console.log(`[WebArena] 評価失敗（終了コード: ${code}）`);
+          reject(new Error(`評価スクリプトが失敗しました: ${code}`));
+        }
+      });
+      proc.on('error', (err) => {
+        console.error('[WebArena] 評価エラー:', err);
+        reject(err);
+      });
+    });
+  } catch (e: any) {
+    console.error('[WebArena] 評価中にエラーが発生しました:', e?.message ?? e);
   }
 }
 

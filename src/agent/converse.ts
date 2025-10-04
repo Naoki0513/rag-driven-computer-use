@@ -67,26 +67,48 @@ export async function converseLoop(
   }
   // 失敗するまで同一リージョンを使い続けるためのインデックス
   let activeRegionIndex = 0;
-  console.log(`[Region Router] 初期アクティブリージョン: ${regionOrder[activeRegionIndex]}（順序: ${regionOrder.join(' -> ')}）`);
+  console.log('\n========================================');
+  console.log('[Region Router] リージョン設定');
+  console.log('========================================');
+  console.log(`総候補数: ${candidates.length}`);
+  console.log(`ユニークリージョン数: ${regionOrder.length}`);
+  console.log(`初期アクティブリージョン: ${regionOrder[activeRegionIndex]}`);
+  console.log(`フェイルオーバー順序: ${regionOrder.join(' -> ')}`);
+  console.log('各リージョンのモデル候補:');
+  regionOrder.forEach((r, i) => {
+    const models = regionToCandidates.get(r) || [];
+    console.log(`  ${i + 1}. ${r}: ${models.map(m => m.modelId).join(', ')}`);
+  });
+  console.log('========================================\n');
 
   let totalInput = 0;
   let totalOutput = 0;
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
   let fullText = '';
+  let iterationCount = 0;
+  const maxIterations = Number(process.env.AGENT_MAX_ITERATIONS) || 1000;
 
   while (true) {
+    iterationCount += 1;
+    console.log(`[ConversationLoop] イテレーション ${iterationCount}/${maxIterations}`);
+    if (iterationCount > maxIterations) {
+      console.log(`[Warning] 最大イテレーション数 ${maxIterations} に達しました。処理を終了します。`);
+      fullText += `\n[注意] 最大イテレーション数に達したため、処理を終了しました。`;
+      break;
+    }
     const currentMessages = addCachePoints(messages, anyClaude, anyNova, counts as any);
     let response: ConverseResponse | undefined;
     let lastError: any;
 
     // 現在のアクティブリージョンから順に直列で試行し、成功リージョンを固定
+    console.log(`[Region Router] 現在のアクティブリージョン: ${regionOrder[activeRegionIndex]} (index=${activeRegionIndex})`);
     for (let step = 0; step < regionOrder.length; step += 1) {
       const regionIndex = (activeRegionIndex + step) % regionOrder.length;
       const region = regionOrder[regionIndex]!;
       const regionCandidates = regionToCandidates.get(region) ?? [];
       if (!regionCandidates.length) continue;
-      console.log(`[PerTurn Sequential] 試行リージョン ${step + 1}/${regionOrder.length}: region=${region}`);
+      console.log(`[PerTurn Sequential] 試行リージョン ${step + 1}/${regionOrder.length}: region=${region} (index=${regionIndex})`);
 
       for (let i = 0; i < regionCandidates.length; i += 1) {
         const { modelId } = regionCandidates[i]!;
@@ -213,15 +235,33 @@ export async function converseLoop(
           } catch {}
           response = res;
           if (activeRegionIndex !== regionIndex) {
-            console.log(`[Region Router] アクティブリージョンを更新: ${regionOrder[activeRegionIndex]} -> ${region}`);
+            console.log(`[Region Router] ✅ 成功！アクティブリージョンを更新: ${regionOrder[activeRegionIndex]} (index=${activeRegionIndex}) -> ${region} (index=${regionIndex})`);
+            activeRegionIndex = regionIndex;
+          } else {
+            console.log(`[Region Router] ✅ 成功！現在のアクティブリージョン ${region} (index=${regionIndex}) を継続使用`);
           }
-          activeRegionIndex = regionIndex;
           break;
         } catch (e: any) {
           try { recordBedrockCallError(obsHandle, e, { modelId, region }); } catch {}
           lastError = e;
-          const msg = String(e?.name || e?.message || e || '');
-          console.log(`[Region Attempt] 失敗 model=${modelId} region=${region} msg=${msg}`);
+          const errorName = String(e?.name || 'UnknownError');
+          const errorMsg = String(e?.message || e || '');
+          const errorCode = String(e?.code || e?.$metadata?.httpStatusCode || '');
+          console.log(`[Region Attempt] 失敗 model=${modelId} region=${region}`);
+          console.log(`  - エラー名: ${errorName}`);
+          console.log(`  - エラーコード: ${errorCode}`);
+          console.log(`  - メッセージ: ${errorMsg.substring(0, 200)}${errorMsg.length > 200 ? '...' : ''}`);
+          if (e?.$metadata) {
+            console.log(`  - HTTPステータス: ${e.$metadata.httpStatusCode || 'N/A'}`);
+            console.log(`  - リクエストID: ${e.$metadata.requestId || 'N/A'}`);
+          }
+          
+          // ThrottlingException の場合は短い待機を挟む
+          if (errorName === 'ThrottlingException' || errorMsg.toLowerCase().includes('throttl')) {
+            const waitMs = 2000 + Math.random() * 3000; // 2-5秒のランダムな待機
+            console.log(`  - ThrottlingException検出: ${Math.round(waitMs)}ms 待機してから次のリージョンを試行します`);
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+          }
           continue;
         }
       }
@@ -230,7 +270,44 @@ export async function converseLoop(
       console.log(`[PerTurn Sequential] リージョン失敗: ${region} → 次リージョンへフェイルオーバー`);
     }
 
-    if (!response) throw lastError ?? new Error('No response from Bedrock');
+    if (!response) {
+      console.error('\n========================================');
+      console.error('[FATAL] すべてのリージョン/モデルでBedrock APIの呼び出しに失敗しました');
+      console.error('========================================');
+      console.error(`試行したリージョン数: ${regionOrder.length}個`);
+      console.error(`試行順序: ${regionOrder.map((r, i) => {
+        const idx = (activeRegionIndex + i) % regionOrder.length;
+        return `${i + 1}. ${regionOrder[idx]}`;
+      }).join(' -> ')}`);
+      console.error(`エラー名: ${lastError?.name || 'Unknown'}`);
+      console.error(`エラーメッセージ: ${lastError?.message || lastError}`);
+      console.error(`エラーコード: ${lastError?.code || 'N/A'}`);
+      
+      // よくあるエラーの診断情報
+      const errorMsg = String(lastError?.message || '').toLowerCase();
+      if (errorMsg.includes('timeout') || lastError?.name?.includes('Timeout')) {
+        console.error('\n[診断] タイムアウトエラーが発生しています');
+        console.error('  → ネットワーク接続を確認してください');
+        console.error('  → タイムアウト設定を増やすには AGENT_TIMEOUT_MS 環境変数を設定してください');
+      } else if (errorMsg.includes('credentials') || errorMsg.includes('unauthorized') || lastError?.name?.includes('Credentials')) {
+        console.error('\n[診断] AWS認証エラーが発生しています');
+        console.error('  → AWS_ACCESS_KEY_ID と AWS_SECRET_ACCESS_KEY が正しく設定されているか確認してください');
+        console.error('  → または AWS_PROFILE が正しく設定されているか確認してください');
+      } else if (errorMsg.includes('throttl') || errorMsg.includes('rate')) {
+        console.error('\n[診断] レート制限エラーが発生しています');
+        console.error('  → しばらく待ってから再試行してください');
+      } else if (errorMsg.includes('model') || errorMsg.includes('not found')) {
+        console.error('\n[診断] モデルIDまたはリージョンが正しくない可能性があります');
+        console.error('  → AGENT_BEDROCK_MODEL_ID と AGENT_AWS_REGION を確認してください');
+      }
+      
+      if (lastError?.stack) {
+        console.error('\nスタックトレース:');
+        console.error(lastError.stack);
+      }
+      console.error('========================================\n');
+      throw lastError ?? new Error('No response from Bedrock');
+    }
 
     const usage = response.usage ?? ({} as any);
     totalInput += usage.inputTokens ?? 0;
@@ -240,6 +317,7 @@ export async function converseLoop(
 
     const stopReason = response.stopReason as string | undefined;
     const out = response.output as any;
+    console.log(`[ConversationLoop] stopReason: ${stopReason}`);
     if (stopReason === 'end_turn') {
       const content = out?.message?.content ?? [];
       for (const block of content) if (block.text) fullText += block.text;
@@ -406,9 +484,12 @@ export async function converseLoop(
         toolResults.push({ toolResult: { toolUseId: r.toolUseId, content: [{ text: r.text }], status: 'success' } });
       }
       if (toolResults.length) {
-        console.log(`Adding tool results to messages: ${JSON.stringify(toolResults)}`);
+        console.log(`[ToolExecution] Adding ${toolResults.length} tool result(s) to messages`);
         messages.push({ role: 'user', content: toolResults });
         // 以降の省略は addCachePoints 内で一元的に実施する（ここでは何もしない）
+      } else {
+        console.log('[Warning] ツール使用が要求されましたが、実行可能なツールが見つかりませんでした。空の結果を返します。');
+        messages.push({ role: 'user', content: [{ text: 'ツールの実行に失敗しました。' }] });
       }
       continue;
     }
@@ -416,7 +497,16 @@ export async function converseLoop(
       fullText += '\n[注意] 最大トークン数に達しました。応答が途切れている可能性があります。';
       break;
     }
-    throw new Error(`未知のstopReason: ${stopReason}`);
+    // その他のstopReason（stop_sequence, content_filtered等）も正常終了として扱う
+    console.log(`[Warning] 予期しないstopReasonでループを終了します: ${stopReason}`);
+    const content = out?.message?.content ?? [];
+    for (const block of content) if (block.text) fullText += block.text;
+    if (stopReason === 'content_filtered') {
+      fullText += '\n[注意] コンテンツフィルタリングにより応答が制限されました。';
+    } else if (stopReason) {
+      fullText += `\n[注意] 停止理由: ${stopReason}`;
+    }
+    break;
   }
 
   try { await flushObservability(); } catch {}
