@@ -7,23 +7,7 @@ export type ToolUseInput =
   | { name: 'browser_press'; input: { ref?: string; role?: string; name?: string; key: string; query: string }; toolUseId: string }
   | { name: 'browser_snapshot'; input: {}; toolUseId: string }
   | { name: 'snapshot_search'; input: { keywordQuery: string; rerankQuery: string; topK?: number }; toolUseId: string }
-  | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string }
-  | {
-      name: 'browser_flow';
-      input: {
-        steps: Array<{
-          action: 'click' | 'input' | 'press';
-          ref?: string;
-          role?: string;
-          name?: string;
-          href?: string;
-          text?: string;
-          key?: string;
-        }>;
-        query?: string;
-      };
-      toolUseId: string;
-    };
+  | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string };
 
 
 

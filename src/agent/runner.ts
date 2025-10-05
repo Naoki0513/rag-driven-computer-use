@@ -206,18 +206,23 @@ async function runWebArenaEvaluation(query: string, answer: string): Promise<voi
     // Trajectory確定
     await finalizeWebArenaTrajectory(answer);
     
-    // CDP Endpoint取得
+    // CDP Endpoint取得（DevToolsポートから生成）
     const { browser, context } = await ensureSharedBrowserStarted();
-    const cdpEndpoint = (browser as any).wsEndpoint?.() || '';
+    const cdpPortEnv = String(process.env.AGENT_CDP_PORT || '').trim();
+    const cdpPort = Number.isFinite(Number(cdpPortEnv)) && Math.trunc(Number(cdpPortEnv)) > 0 ? Math.trunc(Number(cdpPortEnv)) : 9222;
+    const cdpEndpoint = `http://127.0.0.1:${cdpPort}`;
     
     // Trajectory保存（タスクID付きで構造化）
     const configFilePath = String(process.env.AGENT_WEBARENA_CONFIG_FILE || '').trim();
     const taskId = configFilePath ? path.basename(configFilePath, '.json') : 'unknown';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     
-    const trajPath = String(process.env.AGENT_WEBARENA_TRAJECTORY_FILE || '').trim()
-      || path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
-    await saveWebArenaTrajectory(trajPath, cdpEndpoint);
+    const explicitTraj = String(process.env.AGENT_WEBARENA_TRAJECTORY_FILE || '').trim();
+    const trajPath = explicitTraj
+      ? path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`)
+      : path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
+    const evaluatedAt = new Date().toISOString();
+    await saveWebArenaTrajectory(trajPath, cdpEndpoint, evaluatedAt);
     console.log(`[WebArena] Trajectory保存: ${trajPath}`);
     
     // Python評価スクリプト実行
@@ -226,13 +231,14 @@ async function runWebArenaEvaluation(query: string, answer: string): Promise<voi
       return;
     }
     
-    const evalScript = path.resolve(__dirname, '../../scripts/evaluate_webarena.py');
+    const evalScript = path.resolve(process.cwd(), 'scripts', 'evaluate_webarena.py');
+    const pyBin = String(process.env.AGENT_PYTHON_BIN || '').trim() || 'python3';
     console.log(`[WebArena] 評価実行: ${evalScript}`);
     
     const resultPath = path.resolve(process.cwd(), 'output', 'webarena', 'results', `task_${taskId}_${timestamp}.json`);
     
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn('python3', [evalScript, trajPath, configFilePath, cdpEndpoint, resultPath], {
+      const proc = spawn(pyBin, [evalScript, trajPath, configFilePath, cdpEndpoint, resultPath], {
         stdio: 'inherit',
         cwd: process.cwd()
       });

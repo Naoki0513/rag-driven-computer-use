@@ -28,17 +28,15 @@ ${schemaSection}
   1) 遷移: 初回アクセスは必ず autoLogin:true を付与してオートログインを試行する。
      例: browser_goto {"url":"...", "autoLogin": true} または {"id":"...", "autoLogin": true}
      2回目以降は必要時のみ autoLogin:true を指定
-  2) 画面操作(原則): browser_flow {"steps":[{action,ref?,role?,name?,href?,text?,key?}], "query":"クリック/入力後に探したい要素や情報の意味クエリ"} を一括実行（解決優先: ref→role+name→href）
-  3) フォールバック: browser_click / browser_input / browser_press / browser_login / browser_snapshot を必要最小限で使用（browser_click/input/press は必ず ref もしくは role+name と query を指定）
-  4) ToDo 反映: 成功に応じて todo の setDone / editTask
-  5) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
+  2) 画面操作: browser_click / browser_input / browser_press / browser_login / browser_snapshot を必要最小限で使用（browser_click/input/press は必ず ref もしくは role+name と query を指定）
+  3) ToDo 反映: 成功に応じて todo の setDone / editTask
+  4) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
 
 ツールの役割
 - snapshot_search: pages 全件の "snapshotfor AI" を階層チャンク化し、keywordQuery(OR部分一致, 大文字小文字無視)で絞り込み、rerankQuery で意味リランクして上位5件の {id,url,chunk} を返す（リランク時のみURLをテキストに付加）
 - run_query: DuckDB の pages ビューに対する任意 SQL（最大20行の要約を返す）
 - todo: ToDo を追加/完了/編集。常に todo.md の現在内容を返す
 - browser_goto: URL 遷移または id→URL 解決して遷移。初回アクセスは必ず {autoLogin:true} を付与してログインを試行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
-- browser_flow: 複数の click/input/press を順次実行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
 - browser_click: ref もしくは role+name と query を必須で受け取り、ref→role+name の順に解決してクリック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
 - browser_input: ref もしくは role+name と text, query を必須で受け取り、ref→role+name の順に解決して入力。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却
 - browser_press: ref もしくは role+name と key, query を必須で受け取り、ref→role+name の順に解決して送信。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却

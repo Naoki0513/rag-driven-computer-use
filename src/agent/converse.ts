@@ -12,7 +12,6 @@ import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
-import { browserFlow } from './tools/browser-flow.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
 import { todoTool } from './tools/todo.js';
 import { snapshotSearch } from './tools/snapshot-search.js';
@@ -441,14 +440,6 @@ export async function converseLoop(
             if (role && nm) { payload.role = role; payload.name = nm; }
             const result = await browserPress(payload);
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
-            return result;
-          }});
-        } else if (name === 'browser_flow') {
-          const flowInput = (toolUse as any).input ?? {};
-          browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_flow ${JSON.stringify(flowInput).slice(0, 500)}${JSON.stringify(flowInput).length > 500 ? '...' : ''}`);
-            const result = await browserFlow(flowInput);
-            console.log(`Tool result (browser_flow): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         }

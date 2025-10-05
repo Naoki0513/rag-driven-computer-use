@@ -19,37 +19,6 @@ export function buildToolConfig(): ToolConfiguration {
       // run_query は下段に1つだけ定義します
       {
         toolSpec: {
-          name: 'browser_flow',
-          description: '現在のページ上で、クリック/入力/キー送信の複数操作(steps)を順次一括実行します。steps実行後、query（意味クエリ）に基づきスナップショットを階層チャンク化+リランクし、上位3件のチャンクのみ返却します（要素解決は ref→role+name→href のフォールバック）。',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: {
-                steps: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      action: { type: 'string', enum: ['click', 'input', 'press'] },
-                      ref: { type: 'string' },
-                      role: { type: 'string' },
-                      name: { type: 'string' },
-                      href: { type: 'string' },
-                      text: { type: 'string' },
-                      key: { type: 'string' }
-                    },
-                    required: ['action']
-                  }
-                },
-                query: { type: 'string', description: 'steps 実行後に何を探したいかを表す意味クエリ。これに基づき上位3チャンクを返却' }
-              },
-              required: ['steps']
-            }
-          }
-        }
-      },
-      {
-        toolSpec: {
           name: 'todo',
           description: 'エージェントの実行計画用のToDoを管理します（actions配列で一括指定）。操作後は常にtodo.mdの内容を返します。\n- addTask: texts(string[]) を渡します。例: {"actions":[{"action":"addTask","texts":["タスク1","タスク2"]}]}\n- setDone: indexes(number[]) を渡します。例: {"actions":[{"action":"setDone","indexes":[1,3]}]}\n- editTask: indexes(number[]) と texts(string[]) を同数で渡します。例: {"actions":[{"action":"editTask","indexes":[2],"texts":["新しい名前"]}]}',
           inputSchema: {

@@ -22,11 +22,17 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   const displayValue = String(process.env.DISPLAY || '').trim();
   const hasDisplay = !!displayValue;
   const launchHeadless = headfulEnv && !hasDisplay ? true : !headfulEnv;
+  // WebArena評価を有効化している場合は、CDP接続のためにDevToolsポートを開放
+  const enableEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+  const cdpPortEnv = String(process.env.AGENT_CDP_PORT || '').trim();
+  const cdpPort = Number.isFinite(Number(cdpPortEnv)) && Math.trunc(Number(cdpPortEnv)) > 0 ? Math.trunc(Number(cdpPortEnv)) : 9222;
+  const launchArgs: string[] = enableEval ? [`--remote-debugging-port=${cdpPort}`] : [];
   
   console.log('[Playwright] ブラウザ起動設定:');
   console.log(`  - AGENT_HEADFUL: ${headfulEnv ? 'true (GUI表示モード)' : 'false (ヘッドレス)'}`);
   console.log(`  - DISPLAY: "${displayValue}" ${hasDisplay ? '(設定あり)' : '(未設定)'}`);
   console.log(`  - 実際の起動モード: ${launchHeadless ? 'headless' : 'headful'}`);
+  console.log(`  - CDP: ${enableEval ? `有効 (port=${cdpPort})` : '無効'}`);
   
   if (headfulEnv && !hasDisplay) {
     console.log('[Playwright] ⚠️ DISPLAY が見つからないため headless にフォールバックします');
@@ -35,7 +41,7 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
   }
   
   try {
-    sharedBrowser = await chromium.launch({ headless: launchHeadless });
+    sharedBrowser = await chromium.launch({ headless: launchHeadless, args: launchArgs });
     console.log('[Playwright] ✓ Chromium が正常に起動しました');
   } catch (e: any) {
     console.error('[Playwright] ✗ Chromium の起動に失敗しました:', e?.message ?? e);
@@ -514,12 +520,17 @@ export async function finalizeWebArenaTrajectory(answer: string): Promise<void> 
   } catch {}
 }
 
-export async function saveWebArenaTrajectory(outPath: string, cdpEndpoint: string): Promise<void> {
+export async function saveWebArenaTrajectory(outPath: string, cdpEndpoint: string, evaluatedAt?: string): Promise<void> {
   const absPath = path.resolve(outPath);
   await fs.mkdir(path.dirname(absPath), { recursive: true }).catch(()=>{});
+  let finalUrl = '';
+  try {
+    const { page } = await ensureSharedBrowserStarted();
+    finalUrl = page.url();
+  } catch {}
   await fs.writeFile(
     absPath,
-    JSON.stringify({ trajectory: _webArenaTrajectory, cdp_endpoint: cdpEndpoint, final_url: '' }, null, 2),
+    JSON.stringify({ trajectory: _webArenaTrajectory, cdp_endpoint: cdpEndpoint, final_url: finalUrl, evaluated_at: evaluatedAt || new Date().toISOString() }, null, 2),
     'utf-8'
   );
 }
