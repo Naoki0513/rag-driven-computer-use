@@ -1,16 +1,18 @@
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { getTimeoutMs } from '../utilities/timeout.js';
-import { normalizeUrl, canonicalUrlKey } from '../utilities/url.js';
+import { normalizeUrl, canonicalUrlKey, isInternalLink } from '../utilities/url.js';
 import { capture } from './capture.js';
 import { extractInternalUrlsFromSnapshot } from './url-extraction.js';
-import { login } from './session.js';
+import { login, ensureAuthenticated } from './session.js';
 import { extractClickableElementSigs, clickPointerAndCollect } from './click-collector.js';
 import { captureNode } from '../utilities/snapshots.js';
 import type { NodeState } from '../utilities/types.js';
 
 type CollectorConfig = {
   targetUrl: string;
+  // クローリング対象の判定とsiteフィールドに使用するベースURL（トップURL）
+  baseUrl?: string;
   loginUrl?: string;
   loginUser: string;
   loginPass: string;
@@ -37,35 +39,39 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
   const page = await context.newPage();
   try { page.setDefaultTimeout(t); } catch {}
   try { page.setDefaultNavigationTimeout(t); } catch {}
+  
+  // baseUrlがある場合はそれを使用、なければtargetUrlを使用
+  const effectiveBaseUrl = config.baseUrl || config.targetUrl;
 
   try {
     try { console.info(`[BASE] ${normalizeUrl(config.targetUrl)}`); } catch {}
+    try { console.info(`[EFFECTIVE BASE URL] ${normalizeUrl(effectiveBaseUrl)}`); } catch {}
     const startUrl = config.loginUrl || config.targetUrl;
     await page.goto(startUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
-    try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
-    // storageState が指定されておらず、かつ skipLogin でない場合のみログインを試行
-    if (!config.storageStatePath && !config.skipLogin) {
-      await login(page, config);
+    try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
+    // storageState の有無に関わらず、未ログインなら即時ログイン＆storageState更新
+    if (!config.skipLogin) {
+      await ensureAuthenticated(page, { ...config, returnToUrl: config.targetUrl });
     }
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
-    await page.waitForLoadState('load', { timeout: Math.min(10000, t) }).catch(() => {});
-    await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: Math.min(5000, t) }).catch(() => {});
-    await page.waitForTimeout(Math.min(4000, t));
+    await page.waitForLoadState('load', { timeout: t }).catch(() => {});
+    await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }).catch(() => {});
+    await page.waitForTimeout(t);
 
-    let node = await capture(page);
+    let node = await capture(page, effectiveBaseUrl);
     try { console.info(`[ROOT URL] ${node.url}`); } catch {}
-    let snapshotUrls = extractInternalUrlsFromSnapshot(node.snapshotForAI, node.url, config.targetUrl);
+    let snapshotUrls = extractInternalUrlsFromSnapshot(node.snapshotForAI, node.url, effectiveBaseUrl);
     if ((!node.snapshotForAI || node.snapshotForAI.trim().length === 0) || snapshotUrls.length === 0) {
       try {
         const base = new URL(config.targetUrl);
         const homeUrl = new URL('/home', `${base.protocol}//${base.host}`).toString();
         await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: t }).catch(() => {});
-        try { await page.waitForLoadState('load', { timeout: Math.min(10000, t) }); } catch {}
-        try { await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: Math.min(5000, t) }); } catch {}
-        await page.waitForTimeout(Math.min(2000, t));
-        node = await capture(page);
+        try { await page.waitForLoadState('load', { timeout: t }); } catch {}
+        try { await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }); } catch {}
+        await page.waitForTimeout(t);
+        node = await capture(page, effectiveBaseUrl);
         try { console.info(`[ROOT URL] ${node.url}`); } catch {}
-        snapshotUrls = extractInternalUrlsFromSnapshot(node.snapshotForAI, node.url, config.targetUrl);
+        snapshotUrls = extractInternalUrlsFromSnapshot(node.snapshotForAI, node.url, effectiveBaseUrl);
       } catch {}
     }
     addUrls(discoveredUrls, snapshotUrls);
@@ -76,10 +82,10 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
     const baseElemSet = extractClickableElementSigs(node.snapshotForAI);
     const path: string[] = ['ROOT'];
 
-    const clickCfg0: any = { targetUrl: config.targetUrl };
+    const clickCfg0: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
     if (typeof config.maxUrls === 'number') clickCfg0.maxUrls = config.maxUrls;
     if (config.onDiscovered) clickCfg0.onDiscovered = config.onDiscovered;
-    await clickPointerAndCollect(page, node.snapshotForAI, discoveredUrls, baseUrlSet, baseElemSet, config.targetUrl, path, 0, null, undefined, clickCfg0);
+    await clickPointerAndCollect(page, node.snapshotForAI, discoveredUrls, baseUrlSet, baseElemSet, effectiveBaseUrl, path, 0, null, undefined, clickCfg0, undefined, undefined);
 
     
 
@@ -105,6 +111,9 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
   // グローバル重複排除（既定）か、基底URLごとの重複排除かを切り替え
   const globalElemSigs = config.dedupeElementsPerBase ? undefined : new Set<string>();
   // CSV への書き込み件数上限は main 側で制御するため、ここでは max を用いた早期終了は行わない
+  
+  // baseUrlがある場合はそれを使用、なければtargetUrlを使用
+  const effectiveBaseUrl = config.baseUrl || config.targetUrl;
 
   const browser = await chromium.launch({ headless: !config.headful });
   const context = await browser.newContext(config.storageStatePath ? { storageState: config.storageStatePath } : {});
@@ -118,21 +127,29 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
 
   try {
     try { console.info(`[BASE] ${normalizeUrl(config.targetUrl)}`); } catch {}
+    try { console.info(`[EFFECTIVE BASE URL] ${normalizeUrl(effectiveBaseUrl)}`); } catch {}
     const startUrl = config.loginUrl || config.targetUrl;
     if (config.shouldStop?.()) return [];
     await page.goto(startUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
-    try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
+    try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
     // storageState が指定されておらず、かつ skipLogin でない場合のみログインを試行
-    if (!config.storageStatePath && !config.skipLogin) {
-      await login(page, config);
+    if (!config.skipLogin) {
+      await ensureAuthenticated(page, { ...config, returnToUrl: config.targetUrl });
     }
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
-    await page.waitForLoadState('load', { timeout: Math.min(10000, t) }).catch(() => {});
-    await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: Math.min(5000, t) }).catch(() => {});
-    await page.waitForTimeout(Math.min(4000, t));
+    await page.waitForLoadState('load', { timeout: t }).catch(() => {});
+    await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }).catch(() => {});
+    await page.waitForTimeout(t);
+
+    // リダイレクト後のURLが内部リンクかチェック（初期ページ）
+    const initialUrl = normalizeUrl(page.url());
+    if (!isInternalLink(initialUrl, effectiveBaseUrl)) {
+      try { console.warn(`[INIT] initial page redirected to external: ${config.targetUrl} -> ${initialUrl}`); } catch {}
+      return [];
+    }
 
     // まず開始ページから収集
-    let node = await capture(page);
+    let node = await capture(page, effectiveBaseUrl);
     const handleDiscovered = async (url: string) => {
       const norm = normalizeUrl(url);
       const key = canonicalUrlKey(norm);
@@ -140,12 +157,12 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
       try { await config.onDiscovered?.(norm); } catch {}
     };
 
-    addUrlsToMapFromSnapshot(discoveredByKey, node, config.targetUrl, handleDiscovered);
+    addUrlsToMapFromSnapshot(discoveredByKey, node, effectiveBaseUrl, handleDiscovered);
     discoveredByKey.set(canonicalUrlKey(node.url), normalizeUrl(node.url));
-    try { await config.onBaseCapture?.(await captureNode(page, { depth: 0 })); } catch {}
+    try { await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
     // 初期ベース到達時点での discovered を出力
     try {
-      console.info(`[discovered progress] ctx=initial base=${normalizeUrl(config.targetUrl)} total=${discoveredByKey.size}`);
+      console.info(`[discovered progress] ctx=initial base=${normalizeUrl(effectiveBaseUrl)} total=${discoveredByKey.size}`);
       for (const u of Array.from(new Set(discoveredByKey.values())).sort()) console.info(`DISCOVERED: ${u}`);
     } catch {}
     // ここでは早期終了しない（CSV 書き込み上限は main 側で制御）
@@ -153,15 +170,15 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     // ページ内クリックでの増分も加える
     const baseUrlSet = new Set<string>(Array.from(discoveredByKey.values()));
     const baseElemSet = extractClickableElementSigs(node.snapshotForAI);
-    const clickCfg: any = { targetUrl: config.targetUrl };
+    const clickCfg: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
     clickCfg.onDiscovered = handleDiscovered;
     // 基底URLごとに要素重複排除集合をリセットする場合は新しい Set を渡す
     const elemDeduperInitial = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
-    await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, config.targetUrl, ['ROOT'], 0, null, elemDeduperInitial, { ...clickCfg, shouldStop: config.shouldStop })
+    await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, effectiveBaseUrl, ['ROOT'], 0, null, elemDeduperInitial, { ...clickCfg, shouldStop: config.shouldStop }, undefined, undefined)
       .catch(() => {});
     // clickPointerAndCollect 後、念のため再スナップショットからも抽出
-    const after = await capture(page);
-    addUrlsToMapFromSnapshot(discoveredByKey, after, config.targetUrl, handleDiscovered);
+    const after = await capture(page, effectiveBaseUrl);
+    addUrlsToMapFromSnapshot(discoveredByKey, after, effectiveBaseUrl, handleDiscovered);
     // ここでも早期終了しない
 
     
@@ -180,14 +197,26 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
       try {
         if (config.shouldStop?.()) break;
         await page.goto(currentUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
-        try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 10000) }); } catch {}
-        await page.waitForLoadState('load', { timeout: Math.min(10000, t) }).catch(() => {});
-        await page.waitForTimeout(Math.min(1500, t));
+        try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
+        await page.waitForLoadState('load', { timeout: t }).catch(() => {});
+        await page.waitForTimeout(t);
 
-        const n = await capture(page);
+        // 途中でログインが切れてログイン画面へ飛ばされた場合に復帰
+        if (!config.skipLogin) {
+          await ensureAuthenticated(page, { ...config, returnToUrl: currentUrl });
+        }
+
+        // リダイレクト後のURLが内部リンクかチェック
+        const finalUrl = normalizeUrl(page.url());
+        if (!isInternalLink(finalUrl, effectiveBaseUrl)) {
+          try { console.info(`[BFS] skip external redirect: ${currentUrl} -> ${finalUrl}`); } catch {}
+          continue;
+        }
+
+        const n = await capture(page, effectiveBaseUrl);
         // ベース切替のスナップショットをCSVへ
-        try { await config.onBaseCapture?.(await captureNode(page, { depth: 0 })); } catch {}
-        addUrlsToMapFromSnapshot(discoveredByKey, n, config.targetUrl, handleDiscovered);
+        try { await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
+        addUrlsToMapFromSnapshot(discoveredByKey, n, effectiveBaseUrl, handleDiscovered);
         // 規定URLの切り替わり（currentUrl）ごとに discovered を出力
         try {
           console.info(`[discovered progress] ctx=base-switch url=${normalizeUrl(currentUrl)} total=${discoveredByKey.size}`);
@@ -196,15 +225,15 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
 
         const baseSet = new Set<string>(Array.from(discoveredByKey.values()));
         const elemSet = extractClickableElementSigs(n.snapshotForAI);
-        const clickCfg2: any = { targetUrl: config.targetUrl };
+        const clickCfg2: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
         clickCfg2.onDiscovered = handleDiscovered;
         // 基底URLが切り替わるたびに要素重複排除集合をリセット（フラグが true の場合）
         const elemDeduperPerBase = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
-        await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, config.targetUrl, ['ROOT', currentUrl], 0, null, elemDeduperPerBase, { ...clickCfg2, shouldStop: config.shouldStop })
+        await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, effectiveBaseUrl, ['ROOT', currentUrl], 0, null, elemDeduperPerBase, { ...clickCfg2, shouldStop: config.shouldStop }, undefined, undefined)
           .catch(() => {});
         // click後の再スナップショットで増分
-        const n2 = await capture(page);
-        addUrlsToMapFromSnapshot(discoveredByKey, n2, config.targetUrl, handleDiscovered);
+        const n2 = await capture(page, effectiveBaseUrl);
+        addUrlsToMapFromSnapshot(discoveredByKey, n2, effectiveBaseUrl, handleDiscovered);
         
 
         

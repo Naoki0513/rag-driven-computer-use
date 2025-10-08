@@ -6,6 +6,8 @@ export type SessionConfig = {
   loginUrl?: string;
   loginUser: string;
   loginPass: string;
+  // Playwright storageState JSON のパス（ログイン成功時に最新状態を書き戻すために使用）
+  storageStatePath?: string;
 };
 
 export async function login(page: Page, config: SessionConfig): Promise<void> {
@@ -14,8 +16,8 @@ export async function login(page: Page, config: SessionConfig): Promise<void> {
   if (config.loginUrl) {
     await page.goto(config.loginUrl, { waitUntil: 'domcontentloaded', timeout: t }).catch(() => {});
   }
-  try { await page.waitForLoadState('load', { timeout: Math.min(t, 15000) }); } catch {}
-  await page.waitForTimeout(Math.min(1000, t));
+  try { await page.waitForLoadState('load', { timeout: t }); } catch {}
+  await page.waitForTimeout(t);
 
   // ログイン済みの簡易判定: 明示的なログアウト要素があるか
   const hasLogout = await Promise.race([
@@ -59,30 +61,70 @@ export async function login(page: Page, config: SessionConfig): Promise<void> {
     const userLocator = await pickVisible(userCands);
     const passLocator = await pickVisible(passCands);
     if (userLocator && passLocator) {
-      await userLocator.fill(config.loginUser, { timeout: Math.min(4000, t) }).catch(() => {});
-      await passLocator.fill(config.loginPass, { timeout: Math.min(4000, t) }).catch(() => {});
+      await userLocator.fill(config.loginUser, { timeout: t }).catch(() => {});
+      await passLocator.fill(config.loginPass, { timeout: t }).catch(() => {});
 
       const submitLocator = await pickVisible(submitCands);
       const prevUrl = page.url();
       const urlWaiter = page
-        .waitForFunction((prev) => window.location.href !== prev, prevUrl, { timeout: Math.min(t, 7000) })
+        .waitForFunction((prev) => window.location.href !== prev, prevUrl, { timeout: t })
         .then(() => true)
         .catch(() => false);
       if (submitLocator) {
-        await submitLocator.click({ timeout: Math.min(4000, t) }).catch(() => {});
+        await submitLocator.click({ timeout: t }).catch(() => {});
       } else {
-        try { await passLocator.press('Enter', { timeout: Math.min(2000, t) }); } catch {}
+        try { await passLocator.press('Enter', { timeout: t }); } catch {}
       }
       const changed = await urlWaiter.catch(() => false);
       if (!changed) {
-        try { await page.waitForLoadState('domcontentloaded', { timeout: Math.min(t, 5000) }); } catch {}
+        try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
         await page.waitForTimeout(500).catch(() => {});
       }
+      // ログイン後、storageState を最新化
+      try {
+        if (config.storageStatePath) {
+          await page.context().storageState({ path: config.storageStatePath });
+        }
+      } catch {}
     }
   } catch {}
 
   // ログイン後はトップへ移動してクロール開始
-  try { await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(t, 10000) }); } catch {}
+  try { await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded', timeout: t }); } catch {}
+}
+
+// 現在のページが未ログイン/ログイン画面なら再ログインし、必要に応じて元URLへ戻す
+export async function ensureAuthenticated(
+  page: Page,
+  config: SessionConfig & { returnToUrl?: string },
+): Promise<boolean> {
+  const t = getTimeoutMs('crawler');
+  const beforeUrl = page.url();
+  const hasLogout = await Promise.race([
+    page.getByRole('link', { name: /sign\s*out|log\s*out|logout|サインアウト|ログアウト/i }).isVisible().catch(() => false),
+    page.getByRole('button', { name: /sign\s*out|log\s*out|logout|サインアウト|ログアウト/i }).isVisible().catch(() => false),
+  ]).catch(() => false) as boolean;
+
+  // ログインフォームの存在有無（汎用）
+  const onLoginLike = await Promise.race([
+    page.getByRole('button', { name: /sign\s*in|log\s*in|login|サインイン|ログイン/i }).isVisible().catch(() => false),
+    page.getByText(/forgot\s*your\s*password|パスワードを忘れた/i).isVisible().catch(() => false),
+    page.locator('input[type="password"]').isVisible().catch(() => false),
+  ]).catch(() => false) as boolean;
+
+  if (hasLogout && !onLoginLike) return false;
+
+  await login(page, config);
+  try {
+    if (config.storageStatePath) {
+      await page.context().storageState({ path: config.storageStatePath });
+    }
+  } catch {}
+
+  const dest = config.returnToUrl || beforeUrl;
+  try { await page.goto(dest, { waitUntil: 'domcontentloaded', timeout: t }); } catch {}
+  try { await page.waitForLoadState('load', { timeout: t }); } catch {}
+  return true;
 }
 
 

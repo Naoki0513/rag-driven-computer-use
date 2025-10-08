@@ -35,6 +35,12 @@ async function main() {
     ? targetsEnv.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
     : ['https://books.toscrape.com/'];
 
+  // ベースURL（トップURL）の取得：環境変数で指定、なければCRAWLER_TARGET_URLSの最初のURLを使用
+  const baseUrlEnv = (env.CRAWLER_BASE_URL || '').trim();
+  const baseUrl = baseUrlEnv || targetUrls[0] || 'https://books.toscrape.com/';
+  
+  try { console.info(`[CRAWLER] Base URL (for site and path filtering): ${baseUrl}`); } catch {}
+
   // CSV: 常に出力（URLのみモードは廃止）
   const csv = new CsvWriter(config.csvPath || 'output/crawl.csv', [
     'URL',
@@ -47,22 +53,43 @@ async function main() {
 
   // URL発見時・ベースURL訪問時のCSV出力を callbacks で実現
   const fullWritten = new Set<string>();
+  const urlsWritten = new Set<string>(); // URL書き込み済み管理
 
-  const onDiscovered = async (_url: string) => {
-    // プレースホルダー書き込みは廃止（フル行のみ書き込み）
+  const onDiscovered = async (url: string) => {
+    const norm = normalizeUrl(url);
+    // まだURLが書き込まれていない場合は即座にURLのみ書き込み
+    if (!urlsWritten.has(norm)) {
+      if (typeof maxUrls === 'number' && urlsWritten.size >= maxUrls) {
+        try { console.info(`[CSV] skip URL (reached maxUrls=${maxUrls}) -> ${norm}`); } catch {}
+        return;
+      }
+      await csv.appendUrlOnly(norm);
+      urlsWritten.add(norm);
+      try { console.info(`[CSV] URL discovered -> ${norm}`); } catch {}
+    }
   };
 
   const onBaseCapture = async (node: Awaited<ReturnType<typeof captureNode>>) => {
     const u = normalizeUrl(node.url);
     if (fullWritten.has(u)) return;
+    
     // CRAWLER_MAX_URLS を CSV フル行の件数上限として適用
     if (typeof maxUrls === 'number' && fullWritten.size >= maxUrls) {
-      try { console.info(`[CSV] skip (reached maxUrls=${maxUrls}) -> ${u}`); } catch {}
+      try { console.info(`[CSV] skip full capture (reached maxUrls=${maxUrls}) -> ${u}`); } catch {}
       return;
     }
+    
+    // まずURLが書き込まれていることを確認（発見済みでない場合は先にURLのみ書き込み）
+    if (!urlsWritten.has(u)) {
+      await csv.appendUrlOnly(u);
+      urlsWritten.add(u);
+      try { console.info(`[CSV] URL added during base capture -> ${u}`); } catch {}
+    }
+    
+    // フルデータとしてスナップショット等を書き込み
     await csv.appendNode(node);
     fullWritten.add(u);
-    try { console.info(`[CSV] base captured -> ${u}`); } catch {}
+    try { console.info(`[CSV] full capture completed -> ${u}`); } catch {}
   };
 
   // 各ベースURLで BFS し、callbacks 内で逐次 CSV を執筆
@@ -70,6 +97,7 @@ async function main() {
   for (const base of targetUrls) {
     const cfg: any = {
       targetUrl: base,
+      baseUrl: baseUrl, // クローリング対象の判定とsiteに使用する共通のベースURL
       loginUrl: config.loginUrl,
       loginUser: config.loginUser,
       loginPass: config.loginPass,

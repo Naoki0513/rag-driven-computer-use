@@ -4,22 +4,30 @@ import { normalizeUrl } from './url.js';
 import { computeSha256Hex } from './text.js';
 import { getTimeoutMs } from './timeout.js';
 
-export async function captureNode(page: Page, options: { depth: number }): Promise<NodeState> {
+export async function captureNode(page: Page, options: { depth: number; baseUrl?: string }): Promise<NodeState> {
   const t = getTimeoutMs('crawler');
   // SPA/WS 重めページでも進むように、networkidle 依存を避けて段階的に待機
   try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
-  try { await page.waitForLoadState('load', { timeout: Math.min(t, 10000) }); } catch {}
-  await page.waitForTimeout(Math.min(1500, t));
+  try { await page.waitForLoadState('load', { timeout: t }); } catch {}
+  await page.waitForTimeout(t);
 
   const rawUrl = page.url();
   const normalizedUrl = normalizeUrl(rawUrl);
   // 代表的なUIが現れるまで軽く待機（Slack/Rocket.Chat系）
   try {
-    await page.waitForSelector('.rc-room, .rc-message-box, .sidebar, main', { state: 'attached', timeout: Math.min(3000, t) });
+    await page.waitForSelector('.rc-room, .rc-message-box, .sidebar, main', { state: 'attached', timeout: t });
   } catch {}
   const snapshotForAI = await getSnapshotForAI(page);
-  const urlObj = new URL(normalizedUrl);
-  const site = `${urlObj.protocol}//${urlObj.host}`;
+  
+  // baseUrlが指定されている場合はそれをsiteとして使用、なければ現在のURLから計算
+  let site: string;
+  if (options.baseUrl) {
+    site = normalizeUrl(options.baseUrl);
+  } else {
+    const urlObj = new URL(normalizedUrl);
+    site = `${urlObj.protocol}//${urlObj.host}`;
+  }
+  
   const snapshotHash = computeSha256Hex(snapshotForAI);
 
   try {
@@ -64,7 +72,7 @@ export async function getSnapshotForAI(page: Page): Promise<string> {
       if (tag === 'button') return 'button';
       return 'button';
     }
-    const elements = Array.from(document.querySelectorAll('a[href], button, [role="button"], [role="tab"], [role="menuitem"]'));
+    const elements = Array.from(document.querySelectorAll('a[href], button, [role="button"], [role="tab"], [role="menuitem"], [role="link"], [role="treeitem"], [role="disclosure"]'));
     const lines: string[] = [];
     let idx = 0;
     for (const el of elements) {

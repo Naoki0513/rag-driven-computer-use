@@ -2,9 +2,33 @@ import { URL } from 'node:url';
 
 export function isInternalLink(targetUrl: string, baseUrl: string): boolean {
   try {
-    const baseDomain = new URL(baseUrl).host;
-    const targetDomain = new URL(targetUrl).host;
-    return baseDomain === targetDomain;
+    const baseUrlObj = new URL(baseUrl);
+    const targetUrlObj = new URL(targetUrl);
+    
+    // ホストが異なる場合は対象外
+    if (baseUrlObj.host !== targetUrlObj.host) {
+      return false;
+    }
+    
+    // ベースURLのパスを取得（末尾スラッシュを正規化）
+    let basePath = baseUrlObj.pathname;
+    if (basePath !== '/' && !basePath.endsWith('/')) {
+      basePath += '/';
+    }
+    
+    // ターゲットURLのパスを取得
+    let targetPath = targetUrlObj.pathname;
+    if (targetPath !== '/' && !targetPath.endsWith('/')) {
+      targetPath += '/';
+    }
+    
+    // ベースURLが '/' の場合は、同一ホストならすべて対象
+    if (basePath === '/') {
+      return true;
+    }
+    
+    // ターゲットがベースパスで始まるかチェック
+    return targetPath.startsWith(basePath) || targetUrlObj.pathname === baseUrlObj.pathname;
   } catch {
     return false;
   }

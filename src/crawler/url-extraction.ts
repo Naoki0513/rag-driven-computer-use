@@ -10,6 +10,8 @@ export function extractInternalUrlsFromSnapshot(snapshotText: string, fromUrl: s
     if (!m) continue;
     let rawUrl = (m[1] ?? '').trim();
     if (!rawUrl) continue;
+    // 先頭と末尾のダブルクォート・シングルクォートを削除
+    rawUrl = rawUrl.replace(/^["']+|["']+$/g, '');
     // 末尾の , ; ) ] を緩やかに削除
     rawUrl = rawUrl.replace(/[),;\]]+$/g, '');
     let abs: string;

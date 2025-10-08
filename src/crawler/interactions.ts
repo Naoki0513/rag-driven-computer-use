@@ -10,7 +10,14 @@ function buildFlexibleNameRegex(name: string | null | undefined): RegExp | null 
 export async function interactionsFromSnapshot(snapshotText: string): Promise<Interaction[]> {
   const interactions: Interaction[] = [];
   const seenRef = new Set<string>();
-  const allowedRoles = new Set(['button', 'link', 'tab', 'menuitem']);
+  const allowedRoles = new Set([
+    'button',
+    'link',
+    'tab',
+    'menuitem',
+    'treeitem',
+    'disclosure',
+  ]);
 
   const lines = snapshotText.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
@@ -40,7 +47,11 @@ export async function interactionsFromSnapshot(snapshotText: string): Promise<In
       const nxtIndent = (/^(\s*)-\s/.exec(nxtRaw ?? '')?.[1]?.length) ?? 0;
       if (nxtTrim.startsWith('-') && nxtIndent <= baseIndent) break;
       const urlMatch = /(?:href|\/url)\s*:\s*([^\s]+)/i.exec(nxtTrim);
-      if (urlMatch?.[1]) { href = urlMatch[1]; break; }
+      if (urlMatch?.[1]) { 
+        // 先頭と末尾のダブルクォート・シングルクォートを削除
+        href = urlMatch[1].replace(/^["']+|["']+$/g, ''); 
+        break; 
+      }
     }
 
     seenRef.add(ref);
