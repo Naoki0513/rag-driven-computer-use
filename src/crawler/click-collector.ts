@@ -5,6 +5,13 @@ import { isInternalLink, normalizeUrl } from '../utilities/url.js';
 import { capture } from './capture.js';
 import { ensureAuthenticated } from './session.js';
 import { extractInternalUrlsFromSnapshot } from './url-extraction.js';
+import { captureNode } from '../utilities/snapshots.js';
+import type { NodeState } from '../utilities/types.js';
+
+// グローバル: 実行全体で共有するクリック要素シグネチャ集合（role|name）
+const GLOBAL_CLICK_ELEM_SIGS = new Set<string>();
+export function getGlobalClickElemSigs(): Set<string> { return GLOBAL_CLICK_ELEM_SIGS; }
+export function clearGlobalClickElemSigs(): void { GLOBAL_CLICK_ELEM_SIGS.clear(); }
 
 export function extractClickableElementSigs(snapshotText: string): Set<string> {
   const sigs = new Set<string>();
@@ -43,7 +50,7 @@ export async function clickPointerAndCollect(
   level: number,
   _firstMutatorSig: string | null = null,
   globalElemSigSet?: Set<string>,
-  config?: { targetUrl: string; loginUrl?: string; loginUser?: string; loginPass?: string; storageStatePath?: string; maxUrls?: number; onDiscovered?: (url: string) => Promise<void> | void; shouldStop?: () => boolean },
+  config?: { targetUrl: string; loginUrl?: string; loginUser?: string; loginPass?: string; storageStatePath?: string; maxUrls?: number; onDiscovered?: (url: string) => Promise<void> | void; shouldStop?: () => boolean; onNavigated?: (node: NodeState) => Promise<void> | void; onRootDiscovered?: (url: string) => Promise<void> | void },
   parentClick?: ParentClickInfo, // level=0からlevel=1に遷移した際の親要素
   level0RootUrl?: string // level=0のrootURL
 ): Promise<void> {
@@ -180,6 +187,12 @@ export async function clickPointerAndCollect(
         if (isInternalLink(newUrl, baseUrl)) discovered.add(newUrl);
         try { await config?.onDiscovered?.(newUrl); } catch {}
         try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
+        // 遷移直後にスナップショットを取得し、即座にフル行を書き込み＆rootQueueへ登録
+        try {
+          const node = await captureNode(page, { depth: 0, baseUrl });
+          try { await config?.onNavigated?.(node); } catch {}
+          try { await config?.onRootDiscovered?.(newUrl); } catch {}
+        } catch {}
         // 遷移先でログインを要求されたら即時復帰
         try {
           if (config?.loginUser && config?.loginPass && config?.targetUrl) {
@@ -202,7 +215,12 @@ export async function clickPointerAndCollect(
       const snapUrls = extractInternalUrlsFromSnapshot(full.snapshotForAI, full.url, baseUrl);
       const newUrls = snapUrls.filter((u) => !baseUrlSet.has(u));
       for (const u of newUrls) discovered.add(u);
-      try { for (const u of newUrls) await config?.onDiscovered?.(u); } catch {}
+      try {
+        for (const u of newUrls) {
+          await config?.onDiscovered?.(u);
+          await config?.onRootDiscovered?.(u);
+        }
+      } catch {}
       if (config?.shouldStop?.()) {
         try { console.info(`[root=${rootUrl}] [level=${level}] shouldStop=true; stop recursion`); } catch {}
         return;

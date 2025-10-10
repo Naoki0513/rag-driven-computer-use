@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NodeState } from '../utilities/types.js';
+import { computeSha256Hex } from '../utilities/text.js';
 
 export class CsvWriter {
   private filePath: string;
@@ -10,6 +11,8 @@ export class CsvWriter {
   private nextId: number = 1; // CSV の id 列用の連番（ヘッダ行を除いた通し番号）
   private urlToIdMap: Map<string, number> = new Map(); // URL → id のマッピング
   private fullDataWritten = new Set<string>(); // フルデータ書き込み済みURL管理
+  private snapshotHashByUrl: Map<string, string> = new Map(); // URL -> snapshot hash
+  private snapshotHashSet: Set<string> = new Set(); // 既存スナップショットのハッシュ集合（重複排除用）
   private lockQueue: Promise<void> = Promise.resolve(); // ファイル書込みの直列化用
 
   constructor(filePath: string, headers: string[], options?: { clear?: boolean }) {
@@ -36,12 +39,14 @@ export class CsvWriter {
         const existingData = await loadExistingCsvData(this.filePath);
         this.urlToIdMap = existingData.urlToIdMap;
         this.fullDataWritten = existingData.fullDataUrls; // フルデータ書き込み済みURLを復元
+        this.snapshotHashByUrl = existingData.snapshotHashByUrl;
+        this.snapshotHashSet = existingData.snapshotHashSet;
         this.nextId = existingData.maxId + 1; // 最大ID + 1 から開始
-        
+
         this.stream = fs.createWriteStream(this.filePath, { flags: 'a', encoding: 'utf8' });
-        
+
         try { 
-          console.info(`[CSV] loaded existing data: ${existingData.urlToIdMap.size} URLs, ${existingData.fullDataUrls.size} full data, maxId=${existingData.maxId}, nextId=${this.nextId}`); 
+          console.info(`[CSV] loaded existing data: ${existingData.urlToIdMap.size} URLs, ${existingData.fullDataUrls.size} full data, maxId=${existingData.maxId}, nextId=${this.nextId}, hashes=${existingData.snapshotHashSet.size}`); 
         } catch {}
       } else {
         this.stream = fs.createWriteStream(this.filePath, { flags: 'w', encoding: 'utf8' });
@@ -49,6 +54,8 @@ export class CsvWriter {
         this.nextId = 1;
         this.urlToIdMap.clear();
         this.fullDataWritten.clear();
+        this.snapshotHashByUrl.clear();
+        this.snapshotHashSet.clear();
       }
     }
   }
@@ -85,10 +92,28 @@ export class CsvWriter {
 
   async appendNode(node: NodeState): Promise<void> {
     if (!this.stream) throw new Error('CSV writer not initialized');
-    await this.withLock(async () => {
-      // 既にフルデータを書いたURLはスキップ
-      if (this.fullDataWritten.has(node.url)) return;
-      const snapshotForAIJson = JSON.stringify(node.snapshotForAI);
+    await this.appendNodeDedup(node);
+  }
+
+  // 重複排除＆再実行時上書き対応付きのフル行書込み
+  async appendNodeDedup(
+    node: NodeState,
+    options?: { mode?: 'hash' | 'string' }
+  ): Promise<'insert' | 'skip-dup' | 'update'> {
+    if (!this.stream) throw new Error('CSV writer not initialized');
+    const mode = options?.mode === 'string' ? 'string' : 'hash';
+    return await this.withLock(async () => {
+      const snapshotText = node.snapshotForAI ?? '';
+      const newHash = mode === 'hash' ? computeSha256Hex(snapshotText) : snapshotText;
+
+      const existingHashForUrl = this.snapshotHashByUrl.get(node.url) || null;
+
+      // グローバル重複（URLが異なっていても内容が同じ）ならスキップ
+      if (existingHashForUrl === null && this.snapshotHashSet.has(newHash)) {
+        try { console.info(`[DEDUP] skip same-hash url=${node.url} hash=${newHash}`); } catch {}
+        return 'skip-dup';
+      }
+
       let idToUse: number;
       if (this.urlToIdMap.has(node.url)) {
         idToUse = this.urlToIdMap.get(node.url)!;
@@ -97,6 +122,16 @@ export class CsvWriter {
         this.nextId += 1;
         this.urlToIdMap.set(node.url, idToUse);
       }
+
+      const snapshotForAIJson = JSON.stringify(snapshotText);
+
+      // 既存URLでハッシュが同一ならスキップ
+      if (existingHashForUrl && existingHashForUrl === newHash) {
+        try { console.info(`[CSV] skip-dup (same url/hash) ID=${idToUse} -> ${node.url}`); } catch {}
+        return 'skip-dup';
+      }
+
+      // 書込み（新規 or 上書き）
       await this.replaceOrAppendRow([
         node.url,
         String(idToUse),
@@ -104,8 +139,18 @@ export class CsvWriter {
         snapshotForAIJson,
         node.timestamp,
       ], true);
+
+      // インデックス更新
       this.fullDataWritten.add(node.url);
-      try { console.info(`[CSV] full data upserted ID=${idToUse} -> ${node.url}`); } catch {}
+      this.snapshotHashByUrl.set(node.url, newHash);
+      this.snapshotHashSet.add(newHash);
+
+      if (existingHashForUrl && existingHashForUrl !== newHash) {
+        try { console.info(`[CSV] update ID=${idToUse} -> ${node.url} hash=${newHash}`); } catch {}
+        return 'update';
+      }
+      try { console.info(`[CSV] insert ID=${idToUse} -> ${node.url} hash=${newHash}`); } catch {}
+      return 'insert';
     });
   }
 
@@ -223,12 +268,14 @@ function serializeCsvField(value: string | number | null | undefined): string {
   return `"${escaped}"`;
 }
 
-async function loadExistingCsvData(filePath: string): Promise<{ maxId: number; urlToIdMap: Map<string, number>; dataRowCount: number; fullDataUrls: Set<string> }> {
+async function loadExistingCsvData(filePath: string): Promise<{ maxId: number; urlToIdMap: Map<string, number>; dataRowCount: number; fullDataUrls: Set<string>; snapshotHashByUrl: Map<string, string>; snapshotHashSet: Set<string> }> {
   const result = {
     maxId: 0,
     urlToIdMap: new Map<string, number>(),
     dataRowCount: 0,
-    fullDataUrls: new Set<string>()
+    fullDataUrls: new Set<string>(),
+    snapshotHashByUrl: new Map<string, string>(),
+    snapshotHashSet: new Set<string>(),
   };
 
   try {
@@ -252,7 +299,7 @@ async function loadExistingCsvData(filePath: string): Promise<{ maxId: number; u
           const url = fields[0] || '';
           const idStr = fields[1] || '';
           const site = fields[2] || '';
-          const snapshotForAI = fields[3] || '';
+          const snapshotForAIField = fields[3] || '';
           const timestamp = fields[4] || '';
           const id = parseInt(idStr, 10);
           
@@ -266,9 +313,30 @@ async function loadExistingCsvData(filePath: string): Promise<{ maxId: number; u
               result.maxId = id;
             }
             // フルデータ行の検出（site、snapshotForAI、timestampのいずれかが存在する場合）
-            if (fields.length >= 5 && (site.trim() || snapshotForAI.trim() || timestamp.trim())) {
+            if (fields.length >= 5 && (site.trim() || (snapshotForAIField || '').trim() || timestamp.trim())) {
               result.fullDataUrls.add(url);
             }
+
+            // スナップショット文字列からハッシュを復元
+            try {
+              let snapshotText = '';
+              const raw = snapshotForAIField;
+              if (raw && raw.trim().length > 0) {
+                try {
+                  // 既存は JSON.stringify で格納されている想定
+                  snapshotText = JSON.parse(raw);
+                  if (typeof snapshotText !== 'string') snapshotText = String(snapshotText ?? '');
+                } catch {
+                  // 非JSON格納の互換（安全側）
+                  snapshotText = raw;
+                }
+              }
+              const hash = computeSha256Hex(snapshotText);
+              if (snapshotText && hash) {
+                result.snapshotHashByUrl.set(url, hash);
+                result.snapshotHashSet.add(hash);
+              }
+            } catch {}
           }
         }
       } catch (parseErr) {

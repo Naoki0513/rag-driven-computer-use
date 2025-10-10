@@ -5,7 +5,7 @@ import { normalizeUrl, canonicalUrlKey, isInternalLink } from '../utilities/url.
 import { capture } from './capture.js';
 import { extractInternalUrlsFromSnapshot } from './url-extraction.js';
 import { login, ensureAuthenticated } from './session.js';
-import { extractClickableElementSigs, clickPointerAndCollect } from './click-collector.js';
+import { extractClickableElementSigs, clickPointerAndCollect, getGlobalClickElemSigs } from './click-collector.js';
 import { captureNode } from '../utilities/snapshots.js';
 import type { NodeState } from '../utilities/types.js';
 
@@ -26,6 +26,8 @@ type CollectorConfig = {
   onBaseCapture?: (node: NodeState) => Promise<void> | void;
   // true の場合、クリック要素の重複排除集合を基底URLごとにリセットする
   dedupeElementsPerBase?: boolean;
+  // クリック遷移直後の通知（フル行書込み用）
+  onNavigated?: (node: NodeState) => Promise<void> | void;
 };
 
 export async function collectUrlsFromInitialPage(config: CollectorConfig): Promise<string[]> {
@@ -85,7 +87,9 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
     const clickCfg0: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
     if (typeof config.maxUrls === 'number') clickCfg0.maxUrls = config.maxUrls;
     if (config.onDiscovered) clickCfg0.onDiscovered = config.onDiscovered;
-    await clickPointerAndCollect(page, node.snapshotForAI, discoveredUrls, baseUrlSet, baseElemSet, effectiveBaseUrl, path, 0, null, undefined, clickCfg0, undefined, undefined);
+    // 初期ページのクリック探索でも、必要に応じてグローバル集合を利用
+    const initialElemDeduper = config.dedupeElementsPerBase ? undefined : getGlobalClickElemSigs();
+    await clickPointerAndCollect(page, node.snapshotForAI, discoveredUrls, baseUrlSet, baseElemSet, effectiveBaseUrl, path, 0, null, initialElemDeduper, clickCfg0, undefined, undefined);
 
     
 
@@ -109,7 +113,7 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
 export async function collectAllInternalUrls(config: CollectorConfig & { shouldStop?: () => boolean }): Promise<string[]> {
   const discoveredByKey = new Map<string, string>(); // canonicalKey -> normalizedUrl
   // グローバル重複排除（既定）か、基底URLごとの重複排除かを切り替え
-  const globalElemSigs = config.dedupeElementsPerBase ? undefined : new Set<string>();
+  const globalElemSigs = config.dedupeElementsPerBase ? undefined : getGlobalClickElemSigs();
   // CSV への書き込み件数上限は main 側で制御するため、ここでは max を用いた早期終了は行わない
   
   // baseUrlがある場合はそれを使用、なければtargetUrlを使用
@@ -159,7 +163,8 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
 
     addUrlsToMapFromSnapshot(discoveredByKey, node, effectiveBaseUrl, handleDiscovered);
     discoveredByKey.set(canonicalUrlKey(node.url), normalizeUrl(node.url));
-    try { await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
+    let baseRes: any = undefined;
+    try { baseRes = await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
     // 初期ベース到達時点での discovered を出力
     try {
       console.info(`[discovered progress] ctx=initial base=${normalizeUrl(effectiveBaseUrl)} total=${discoveredByKey.size}`);
@@ -167,18 +172,23 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     } catch {}
     // ここでは早期終了しない（CSV 書き込み上限は main 側で制御）
 
-    // ページ内クリックでの増分も加える
-    const baseUrlSet = new Set<string>(Array.from(discoveredByKey.values()));
-    const baseElemSet = extractClickableElementSigs(node.snapshotForAI);
-    const clickCfg: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
-    clickCfg.onDiscovered = handleDiscovered;
-    // 基底URLごとに要素重複排除集合をリセットする場合は新しい Set を渡す
-    const elemDeduperInitial = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
-    await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, effectiveBaseUrl, ['ROOT'], 0, null, elemDeduperInitial, { ...clickCfg, shouldStop: config.shouldStop }, undefined, undefined)
-      .catch(() => {});
-    // clickPointerAndCollect 後、念のため再スナップショットからも抽出
-    const after = await capture(page, effectiveBaseUrl);
-    addUrlsToMapFromSnapshot(discoveredByKey, after, effectiveBaseUrl, handleDiscovered);
+    // ページ内クリックでの増分も加える（ただし初回ベースが重複ならスキップ）
+    if (baseRes !== 'skip-dup') {
+      const baseUrlSet = new Set<string>(Array.from(discoveredByKey.values()));
+      const baseElemSet = extractClickableElementSigs(node.snapshotForAI);
+      const clickCfg: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
+      clickCfg.onDiscovered = handleDiscovered;
+      clickCfg.onNavigated = config.onNavigated;
+      // 基底URLごとに要素重複排除集合をリセットする場合は新しい Set を渡す
+      const elemDeduperInitial = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
+      await clickPointerAndCollect(page, node.snapshotForAI, new Set<string>(), baseUrlSet, baseElemSet, effectiveBaseUrl, ['ROOT'], 0, null, elemDeduperInitial, { ...clickCfg, shouldStop: config.shouldStop }, undefined, undefined)
+        .catch(() => {});
+      // clickPointerAndCollect 後、念のため再スナップショットからも抽出
+      const after = await capture(page, effectiveBaseUrl);
+      addUrlsToMapFromSnapshot(discoveredByKey, after, effectiveBaseUrl, handleDiscovered);
+    } else {
+      try { console.info(`[BFS] skip clicks for initial base (duplicate snapshot)`); } catch {}
+    }
     // ここでも早期終了しない
 
     
@@ -215,7 +225,8 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
 
         const n = await capture(page, effectiveBaseUrl);
         // ベース切替のスナップショットをCSVへ
-        try { await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
+        let res2: any = undefined;
+        try { res2 = await config.onBaseCapture?.(await captureNode(page, { depth: 0, baseUrl: effectiveBaseUrl })); } catch {}
         addUrlsToMapFromSnapshot(discoveredByKey, n, effectiveBaseUrl, handleDiscovered);
         // 規定URLの切り替わり（currentUrl）ごとに discovered を出力
         try {
@@ -223,17 +234,22 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
           for (const u of Array.from(new Set(discoveredByKey.values())).sort()) console.info(`DISCOVERED: ${u}`);
         } catch {}
 
-        const baseSet = new Set<string>(Array.from(discoveredByKey.values()));
-        const elemSet = extractClickableElementSigs(n.snapshotForAI);
-        const clickCfg2: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
-        clickCfg2.onDiscovered = handleDiscovered;
-        // 基底URLが切り替わるたびに要素重複排除集合をリセット（フラグが true の場合）
-        const elemDeduperPerBase = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
-        await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, effectiveBaseUrl, ['ROOT', currentUrl], 0, null, elemDeduperPerBase, { ...clickCfg2, shouldStop: config.shouldStop }, undefined, undefined)
-          .catch(() => {});
-        // click後の再スナップショットで増分
-        const n2 = await capture(page, effectiveBaseUrl);
-        addUrlsToMapFromSnapshot(discoveredByKey, n2, effectiveBaseUrl, handleDiscovered);
+        if (res2 !== 'skip-dup') {
+          const baseSet = new Set<string>(Array.from(discoveredByKey.values()));
+          const elemSet = extractClickableElementSigs(n.snapshotForAI);
+          const clickCfg2: any = { targetUrl: effectiveBaseUrl, loginUrl: config.loginUrl, loginUser: config.loginUser, loginPass: config.loginPass, storageStatePath: config.storageStatePath };
+          clickCfg2.onDiscovered = handleDiscovered;
+          clickCfg2.onNavigated = config.onNavigated;
+          // 基底URLが切り替わるたびに要素重複排除集合をリセット（フラグが true の場合）
+          const elemDeduperPerBase = config.dedupeElementsPerBase ? new Set<string>() : globalElemSigs;
+          await clickPointerAndCollect(page, n.snapshotForAI, new Set<string>(), baseSet, elemSet, effectiveBaseUrl, ['ROOT', currentUrl], 0, null, elemDeduperPerBase, { ...clickCfg2, shouldStop: config.shouldStop }, undefined, undefined)
+            .catch(() => {});
+          // click後の再スナップショットで増分
+          const n2 = await capture(page, effectiveBaseUrl);
+          addUrlsToMapFromSnapshot(discoveredByKey, n2, effectiveBaseUrl, handleDiscovered);
+        } else {
+          try { console.info(`[BFS] skip clicks for root (duplicate snapshot): ${currentUrl}`); } catch {}
+        }
         
 
         
