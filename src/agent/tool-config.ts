@@ -107,17 +107,15 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_click',
-          description: '要素をクリックします。ref もしくは role+name の指定に加え、query が必須です。解決は ref→role+name の順に試行します。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素をクリックします。ref（必須）で要素を指定し、query（必須）でクリック後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                ref: { type: 'string' },
-                role: { type: 'string' },
-                name: { type: 'string' },
-                query: { type: 'string' }
+                ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
+                query: { type: 'string', description: 'クリック後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
               },
-              required: ['query'],
+              required: ['ref', 'query'],
             },
           },
         },
@@ -125,18 +123,16 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_input',
-          description: '要素にテキストを入力します。ref もしくは role+name の指定に加え、text と query が必須です。解決は ref→role+name の順に試行します。入力後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にテキストを入力します。ref（必須）で要素を指定し、text（必須）で入力内容、query（必須）で入力後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。入力後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                ref: { type: 'string' },
-                role: { type: 'string' },
-                name: { type: 'string' },
-                text: { type: 'string' },
-                query: { type: 'string' }
+                ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
+                text: { type: 'string', description: '入力するテキスト' },
+                query: { type: 'string', description: '入力後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
               },
-              required: ['text', 'query'],
+              required: ['ref', 'text', 'query'],
             },
           },
         },
@@ -144,18 +140,16 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_press',
-          description: '要素にキーボード押下を送ります。ref もしくは role+name の指定に加え、key と query が必須です。解決は ref→role+name の順に試行します。送信後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にキーボード押下を送ります。ref（必須）で要素を指定し、key（必須）で押下するキー、query（必須）で送信後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。送信後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                ref: { type: 'string' },
-                role: { type: 'string' },
-                name: { type: 'string' },
-                key: { type: 'string' },
-                query: { type: 'string' }
+                ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
+                key: { type: 'string', description: '押下するキー（例: Enter, Tab, Escape など）' },
+                query: { type: 'string', description: '送信後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
               },
-              required: ['key', 'query'],
+              required: ['ref', 'key', 'query'],
             },
           },
         },

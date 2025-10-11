@@ -68,7 +68,7 @@ export async function browserGoto(urlOrId: string, opts?: { autoLogin?: boolean;
     _browserGotoHasRun = true;
 
     // 3) スナップショット（ログイン実施後の画面）
-    try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
+    // networkidle は重いため削除（domcontentloaded で十分）
     const snaps = await captureAndStoreSnapshot(page);
     let top: Array<{ score: number; text: string }> = [];
     try { top = opts?.query ? await rerankSnapshotTopChunks(snaps.text, String(opts.query), 3) : []; } catch {}

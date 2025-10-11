@@ -15,11 +15,11 @@ export async function browserLogin(url: string, query?: string): Promise<string>
     try {
       if (url && url.trim().length > 0) {
         await page.goto(url, { timeout: t });
-        await page.waitForLoadState('networkidle', { timeout: t });
+        // networkidle は重いため domcontentloaded に変更
+        try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
       } else {
         // URL 未指定でも現在ページのロード完了を待機
         try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
-        try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
       }
 
       const userSelectors = [
@@ -58,7 +58,7 @@ export async function browserLogin(url: string, query?: string): Promise<string>
           const el = await page.$(sel);
           if (el) {
             try { await el.click({ timeout: t }); } catch {}
-            try { await page.waitForLoadState('networkidle', { timeout: t }); } catch {}
+            try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
             break;
           }
         }
@@ -115,7 +115,8 @@ export async function browserLogin(url: string, query?: string): Promise<string>
         await pwEl.press('Enter');
       }
 
-      await page.waitForLoadState('networkidle', { timeout: t });
+      // networkidle は重いため削除（domcontentloaded で十分）
+      try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
       try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}

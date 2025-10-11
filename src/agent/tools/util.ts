@@ -101,7 +101,7 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
 }
 
 async function takeSnapshots(page: Page): Promise<{ text: string; hash: string; url: string }> {
-  // クローラと同一の取得手順（networkidle 待機 + 追加待機）で撮影する
+  // waitForTimeout を削除したため、高速にスナップショット取得
   const node = await captureNode(page, { depth: 0 });
   return { text: node.snapshotForAI, hash: node.snapshotHash, url: node.url };
 }
@@ -212,18 +212,38 @@ export async function resolveLocatorByRef(
 ): Promise<Locator | null> {
   const t = getTimeoutMs('agent');
 
-  // 0) data 属性が既に付与されていれば最優先
+  // 0) aria-ref セレクターを最優先で試行（Playwright _snapshotForAI の ref を直接使用）
   try {
+    console.log(`[resolveLocatorByRef] 試行1: aria-ref セレクター (ref=${ref})`);
+    const byAriaRef = page.locator(`aria-ref=${ref}`);
+    const count = await byAriaRef.count();
+    if (count > 0) {
+      console.log(`[resolveLocatorByRef] ✅ 成功: aria-ref セレクターで解決 (ref=${ref})`);
+      return byAriaRef.first();
+    }
+    console.log(`[resolveLocatorByRef] aria-ref セレクターでは見つかりませんでした (count=${count})`);
+  } catch (e: any) {
+    console.log(`[resolveLocatorByRef] aria-ref セレクターでエラー: ${e?.message || e}`);
+  }
+
+  // 1) data 属性が既に付与されていれば次に優先
+  try {
+    console.log(`[resolveLocatorByRef] 試行2: data-wg-ref 属性 (ref=${ref})`);
     const byAttr = page.locator(`[data-wg-ref="${ref}"]`).first();
-    if ((await byAttr.count()) > 0) return byAttr;
+    if ((await byAttr.count()) > 0) {
+      console.log(`[resolveLocatorByRef] ✅ 成功: data-wg-ref 属性で解決 (ref=${ref})`);
+      return byAttr;
+    }
   } catch {}
 
-  // 1) ページ内のサイドカー索引（任意実装）
+  // 2) ページ内のサイドカー索引（任意実装）
   try {
+    console.log(`[resolveLocatorByRef] 試行3: サイドカー索引 (ref=${ref})`);
     const idx = await page.evaluate((r: string) => (window as any).__WG_REF_INDEX__?.[r], ref).catch(() => null as any);
     if (idx?.css) {
       const byCss = page.locator(idx.css).first();
       if ((await byCss.count()) > 0) {
+        console.log(`[resolveLocatorByRef] ✅ 成功: サイドカー索引(CSS)で解決 (ref=${ref})`);
         try { await byCss.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
         return byCss;
       }
@@ -231,6 +251,7 @@ export async function resolveLocatorByRef(
     if (idx?.xpath) {
       const byXpath = page.locator(`xpath=${idx.xpath}`).first();
       if ((await byXpath.count()) > 0) {
+        console.log(`[resolveLocatorByRef] ✅ 成功: サイドカー索引(XPath)で解決 (ref=${ref})`);
         try { await byXpath.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
         return byXpath;
       }
@@ -239,17 +260,22 @@ export async function resolveLocatorByRef(
       const loc = page.getByRole(idx.role as any);
       const nth = loc.nth(Math.max(0, Math.trunc(idx.roleIndex)));
       if ((await nth.count()) > 0) {
+        console.log(`[resolveLocatorByRef] ✅ 成功: サイドカー索引(Role)で解決 (ref=${ref})`);
         try { await nth.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
         return nth;
       }
     }
   } catch {}
 
-  // 2) 呼び出し側から渡されたスナップショットを用いた序数ベース推定
+  // 3) 呼び出し側から渡されたスナップショットを用いた序数ベース推定（フォールバック）
+  console.log(`[resolveLocatorByRef] 試行4: スナップショット序数ベース推定 (ref=${ref})`);
   const snapText: string | null = (opts && typeof opts.resolutionSnapshotText === 'string')
     ? opts.resolutionSnapshotText
     : null;
-  if (!snapText) return null;
+  if (!snapText) {
+    console.log(`[resolveLocatorByRef] ❌ 失敗: スナップショットテキストが提供されていません (ref=${ref})`);
+    return null;
+  }
 
   // パース: 行単位にして ref を含む行を特定
   const lines = snapText.split(/\r?\n/);
@@ -258,7 +284,10 @@ export async function resolveLocatorByRef(
   for (let i = 0; i < lines.length; i += 1) {
     if (lines[i]!.includes(refToken)) { targetIdx = i; break; }
   }
-  if (targetIdx === -1) return null;
+  if (targetIdx === -1) {
+    console.log(`[resolveLocatorByRef] ❌ 失敗: スナップショット内にref=${ref}が見つかりません`);
+    return null;
+  }
 
   // 役割抽出（同ファイルの findRoleAndNameByRef を流用）
   const rn = findRoleAndNameByRef(snapText, ref);
@@ -349,6 +378,7 @@ export async function resolveLocatorByRef(
       loc = loc.nth(idx);
       const exists = (await loc.count()) > 0;
       if (exists) {
+        console.log(`[resolveLocatorByRef] ✅ 成功: スナップショット序数ベース(role+nth)で解決 (ref=${ref}, role=${role}, nth=${idx})`);
         try { await loc.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
         return loc;
       }
@@ -358,14 +388,17 @@ export async function resolveLocatorByRef(
   // 役割が取れない場合の緩いフォールバック: 祖先スコープがあれば最初の入力要素
   try {
     if (scope) {
+      console.log(`[resolveLocatorByRef] 試行5: 緩いフォールバック(祖先スコープ内textbox) (ref=${ref})`);
       const anyTextbox = scope.getByRole('textbox' as any).first();
       if ((await anyTextbox.count()) > 0) {
+        console.log(`[resolveLocatorByRef] ✅ 成功: 緩いフォールバック(textbox)で解決 (ref=${ref})`);
         try { await anyTextbox.first().evaluate((el: Element, r: string) => el.setAttribute('data-wg-ref', r), ref); } catch {}
         return anyTextbox;
       }
     }
   } catch {}
 
+  console.log(`[resolveLocatorByRef] ❌ 最終失敗: すべての解決方法で要素が見つかりませんでした (ref=${ref})`);
   return null;
 }
 

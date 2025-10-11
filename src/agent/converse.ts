@@ -404,12 +404,10 @@ export async function converseLoop(
           const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: browser_click ${JSON.stringify(inp)}`);
-            const payload: any = { query: String(inp.query ?? '') };
-            const ref = String(inp.ref ?? '').trim();
-            const role = String(inp.role ?? '').trim();
-            const nm = String(inp.name ?? '').trim();
-            if (ref) payload.ref = ref;
-            if (role && nm) { payload.role = role; payload.name = nm; }
+            const payload: any = { 
+              ref: String(inp.ref ?? '').trim(), 
+              query: String(inp.query ?? '') 
+            };
             const result = await browserClick(payload);
             console.log(`Tool result (browser_click): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
@@ -418,12 +416,11 @@ export async function converseLoop(
           const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: browser_input ${JSON.stringify(inp)}`);
-            const payload: any = { text: String(inp.text ?? ''), query: String(inp.query ?? '') };
-            const ref = String(inp.ref ?? '').trim();
-            const role = String(inp.role ?? '').trim();
-            const nm = String(inp.name ?? '').trim();
-            if (ref) payload.ref = ref;
-            if (role && nm) { payload.role = role; payload.name = nm; }
+            const payload: any = { 
+              ref: String(inp.ref ?? '').trim(), 
+              text: String(inp.text ?? ''), 
+              query: String(inp.query ?? '') 
+            };
             const result = await browserInput(payload);
             console.log(`Tool result (browser_input): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
@@ -432,12 +429,11 @@ export async function converseLoop(
           const inp = (toolUse as any).input ?? {};
           browserTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: browser_press ${JSON.stringify(inp)}`);
-            const payload: any = { key: String(inp.key ?? ''), query: String(inp.query ?? '') };
-            const ref = String(inp.ref ?? '').trim();
-            const role = String(inp.role ?? '').trim();
-            const nm = String(inp.name ?? '').trim();
-            if (ref) payload.ref = ref;
-            if (role && nm) { payload.role = role; payload.name = nm; }
+            const payload: any = { 
+              ref: String(inp.ref ?? '').trim(), 
+              key: String(inp.key ?? ''), 
+              query: String(inp.query ?? '') 
+            };
             const result = await browserPress(payload);
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;

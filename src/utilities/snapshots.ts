@@ -9,14 +9,10 @@ export async function captureNode(page: Page, options: { depth: number; baseUrl?
   // SPA/WS 重めページでも進むように、networkidle 依存を避けて段階的に待機
   try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
   try { await page.waitForLoadState('load', { timeout: t }); } catch {}
-  await page.waitForTimeout(t);
 
   const rawUrl = page.url();
   const normalizedUrl = normalizeUrl(rawUrl);
-  // 代表的なUIが現れるまで軽く待機（Slack/Rocket.Chat系）
-  try {
-    await page.waitForSelector('.rc-room, .rc-message-box, .sidebar, main', { state: 'attached', timeout: t });
-  } catch {}
+  // 特定サイト用の待機は削除（一般的なサイトには不要）
   const snapshotForAI = await getSnapshotForAI(page);
   
   // baseUrlが指定されている場合はそれをsiteとして使用、なければ現在のURLから計算
