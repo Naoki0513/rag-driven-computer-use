@@ -38,7 +38,44 @@ export function addCachePoints(
     return sum;
   }
 
-  // 直近のツールリザルト(TR)は保持し、それ以前は snapshots.text を省略
+  // 環境変数からしきい値を取得（デフォルト500文字）
+  function getElideThreshold(): number {
+    const envVal = String(process.env.AGENT_ELIDE_THRESHOLD || '').trim();
+    const parsed = Number(envVal);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.trunc(parsed);
+    }
+    return 500; // デフォルト
+  }
+
+  // 指定した文字数以上の値を "omitted" に置換する再帰関数
+  function elideObjectLongStrings(obj: any, threshold: number): void {
+    if (obj === null || obj === undefined) return;
+    if (typeof obj !== 'object') return;
+    
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i += 1) {
+        const val = obj[i];
+        if (typeof val === 'string' && val.length > threshold) {
+          obj[i] = 'omitted';
+        } else if (typeof val === 'object' && val !== null) {
+          elideObjectLongStrings(val, threshold);
+        }
+      }
+    } else {
+      for (const key of Object.keys(obj)) {
+        const val = obj[key];
+        if (typeof val === 'string' && val.length > threshold) {
+          obj[key] = 'omitted';
+        } else if (typeof val === 'object' && val !== null) {
+          elideObjectLongStrings(val, threshold);
+        }
+      }
+    }
+  }
+
+  // 直近のツールリザルト(TR)は保持し、それ以前は指定文字数以上の値を省略
+  const elideThreshold = getElideThreshold();
   let latestToolResultsKept = false;
   let elidedTargetIndex = -1;
   for (let i = messagesCloned.length - 1; i >= 0; i -= 1) {
@@ -62,19 +99,8 @@ export function addCachePoints(
                 try {
                   const obj = JSON.parse(cb.text);
                   if (obj && typeof obj === 'object') {
-                    let changed = false;
-                    if (obj.snapshots && typeof obj.snapshots === 'object') {
-                      // snapshots.top[*].text を省略 / 古い実装の snapshots.text も互換削除
-                      const tops = (obj.snapshots as any).top;
-                      if (Array.isArray(tops)) { (obj.snapshots as any).top = tops.map(() => ({})); changed = true; }
-                      if ('text' in obj.snapshots) { delete (obj as any).snapshots.text; changed = true; }
-                    }
-                    if ((obj as any).action === 'snapshot_search' && Array.isArray((obj as any).results)) {
-                      for (const r of (obj as any).results as any[]) {
-                        if (r && typeof r === 'object' && 'chunk' in r) { delete (r as any).chunk; changed = true; }
-                      }
-                    }
-                    if (changed) cb.text = JSON.stringify(obj);
+                    elideObjectLongStrings(obj, elideThreshold);
+                    cb.text = JSON.stringify(obj);
                   }
                 } catch {}
                 continue;
@@ -82,19 +108,7 @@ export function addCachePoints(
               // オブジェクトの場合
               if (cb.text && typeof cb.text === 'object') {
                 try {
-                  const obj = cb.text as any;
-                  if (obj && typeof obj === 'object') {
-                    if (obj.snapshots && typeof obj.snapshots === 'object') {
-                      const tops = (obj.snapshots as any).top;
-                      if (Array.isArray(tops)) { (obj.snapshots as any).top = tops.map(() => ({})); }
-                      if ('text' in obj.snapshots) { delete (obj as any).snapshots.text; }
-                    }
-                    if ((obj as any).action === 'snapshot_search' && Array.isArray((obj as any).results)) {
-                      for (const r of (obj as any).results as any[]) {
-                        if (r && typeof r === 'object' && 'chunk' in r) delete (r as any).chunk;
-                      }
-                    }
-                  }
+                  elideObjectLongStrings(cb.text, elideThreshold);
                 } catch {}
               }
             }
@@ -191,7 +205,7 @@ export function addCachePoints(
     const dbg2 = String(process.env.AGENT_DEBUG_ELIDE_SNAPSHOTS ?? '').toLowerCase();
     if (dbg2 === '1' || dbg2 === 'true') {
       // eslint-disable-next-line no-console
-      console.log('[ElideSnapshots] 古いツールリザルトの snapshots.text を省略しました（最新のみ保持）。');
+      console.log(`[ElideSnapshots] 古いツールリザルトの${elideThreshold}文字以上の値を "omitted" に置換しました（最新のみ保持）。しきい値: AGENT_ELIDE_THRESHOLD=${elideThreshold}`);
     }
   } catch {}
   return messagesCloned;

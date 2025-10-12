@@ -46,7 +46,7 @@ export async function snapshotSearch(input: { keywordQuery: string; rerankQuery:
     // 1) 全レコードから snapshot と url/id を一括取得
     const t0 = Date.now();
     const rows = await queryAll<SnapshotRow>(
-      'SELECT "snapshotfor AI" AS snapshot, "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages'
+      'SELECT snapshotforai AS snapshot, "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages'
     );
 
     // 2) 並列でチャンク化（URL/IDごと）

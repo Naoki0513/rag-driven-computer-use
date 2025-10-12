@@ -6,7 +6,6 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
-import { runQuery } from './tools/run-query.js';
 import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
@@ -15,6 +14,7 @@ import { browserPress } from './tools/browser-press.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
 import { todoTool } from './tools/todo.js';
 import { snapshotSearch } from './tools/snapshot-search.js';
+import { snapshotFetch } from './tools/snapshot-fetch.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
@@ -355,20 +355,20 @@ export async function converseLoop(
             console.log(`Tool result (browser_snapshot): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
-        } else if (name === 'run_query') {
-          const q = (toolUse as any).input?.query ?? '';
-          parallelTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: run_query with input: ${JSON.stringify({ query: q })}`);
-            const result = await runQuery(String(q));
-            console.log(`Tool result (run_query): ${result}`);
-            return result;
-          }});
         } else if (name === 'snapshot_search') {
           const inp = (toolUse as any).input ?? {};
           parallelTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: snapshot_search with input: ${JSON.stringify(inp).slice(0, 500)}${JSON.stringify(inp).length > 500 ? '...' : ''}`);
             const result = await snapshotSearch(inp);
             console.log(`Tool result (snapshot_search): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'snapshot_fetch') {
+          const inp = (toolUse as any).input ?? {};
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: snapshot_fetch with input: ${JSON.stringify(inp)}`);
+            const result = await snapshotFetch(inp);
+            console.log(`Tool result (snapshot_fetch): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_login') {

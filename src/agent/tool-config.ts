@@ -6,7 +6,7 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_snapshot',
-          description: '現在のページのスナップショット4AIを取得します。ブラウザースナップショットのみ、リランクせずページ全体のスナップショット本文をそのまま返却します（snapshots.text）。',
+          description: '現在のページのsnapshotforaiを取得します。ブラウザースナップショットのみ、リランクせずページ全体のスナップショット本文をそのまま返却します（snapshots.text）。',
           inputSchema: {
             json: {
               type: 'object',
@@ -16,7 +16,6 @@ export function buildToolConfig(): ToolConfiguration {
           }
         }
       },
-      // run_query は下段に1つだけ定義します
       {
         toolSpec: {
           name: 'todo',
@@ -63,21 +62,8 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
-          name: 'run_query',
-          description: 'DuckDBに対してSQLを実行します（CSV: pages ビューに対するクエリ）',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { query: { type: 'string' } },
-              required: ['query'],
-            },
-          },
-        },
-      },
-      {
-        toolSpec: {
           name: 'snapshot_search',
-          description: '全ページの "snapshotfor AI" を一括取得し階層チャンク分割。keywordQuery(AND部分一致, 大文字小文字無視)でチャンクを絞り込み、rerankQueryでCohere Rerankにより意味で並べ替え、上位K件(未指定時は5件)の {id,url,chunk} を返します（リランク時のみURLもテキストに付加）。',
+          description: '全ページの "snapshotforai" を一括取得し階層チャンク分割。keywordQuery(AND部分一致, 大文字小文字無視)でチャンクを絞り込み、rerankQueryでCohere Rerankにより意味で並べ替え、上位K件(未指定時は5件)の {id,url,chunk} を返します（リランク時のみURLもテキストに付加）。',
           inputSchema: {
             json: {
               type: 'object',
@@ -87,6 +73,22 @@ export function buildToolConfig(): ToolConfiguration {
                 topK: { type: 'number', description: '返却する上位件数（未指定時は5、上限は環境設定に従う）' },
               },
               required: ['keywordQuery', 'rerankQuery'],
+            },
+          },
+        },
+      },
+      {
+        toolSpec: {
+          name: 'snapshot_fetch',
+          description: 'CSVからURLまたはIDを指定してページのsnapshotforaiの完全なテキストを取得します。snapshot_searchで取得したチャンク結果からページ全文を確認したい場合に使用します。',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                urls: { type: 'array', items: { type: 'string' }, description: '取得したいページのURLリスト' },
+                ids: { type: 'array', items: { type: 'string' }, description: '取得したいページのIDリスト（文字列として指定）' },
+              },
+              required: [],
             },
           },
         },

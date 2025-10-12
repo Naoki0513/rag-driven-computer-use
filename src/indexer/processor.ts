@@ -16,7 +16,7 @@ export class IndexerProcessor {
 
   constructor(config: IndexerConfig) {
     this.config = config;
-    this.embeddingService = new EmbeddingsService(config.regions, config.embeddingModel);
+    this.embeddingService = new EmbeddingsService(config.regions, config.embeddingModel, config.provider);
     this.paths = getIndexPaths(config.indexName, config.outputDir);
   }
 
@@ -48,7 +48,7 @@ export class IndexerProcessor {
     console.log(`✓ チャンク分割完了: ${chunks.length} チャンク\n`);
 
     // 3. 埋め込み処理
-    console.log('[3/4] 埋め込み処理中（Bedrock API呼び出し）...');
+    console.log('[3/4] 埋め込み処理中...');
     const { vectors, chunkIds } = await this.embedChunks(chunks);
     console.log(`✓ 埋め込み完了: ${vectors.length} ベクトル\n`);
 
@@ -137,7 +137,7 @@ export class IndexerProcessor {
     // 事前にスナップショットサイズを確認
     console.log('\n[チャンク分割前] 各ページのスナップショットサイズ:');
     pages.forEach((page, idx) => {
-      const snapshotText = (page['snapshotforai'] ?? page['snapshotfor AI'] ?? '') as string;
+      const snapshotText = (page['snapshotforai'] ?? '') as string;
       console.log(`  Page ${page.id ?? idx + 1}: ${snapshotText.length}文字`);
     });
     console.log(`\n設定: MAX=${this.config.maxChunkSize}文字, MIN=${this.config.minChunkSize}文字\n`);
@@ -156,7 +156,7 @@ export class IndexerProcessor {
       const url = page.URL ?? '';
       const site = page.site ?? '';
       // 列名は snapshotforai（スペースなし）
-      let snapshotText = (page['snapshotforai'] ?? page['snapshotfor AI'] ?? '') as string;
+      let snapshotText = (page['snapshotforai'] ?? '') as string;
       
       // CSVからの読み込みでエスケープされた改行を実際の改行に変換
       snapshotText = snapshotText
@@ -210,7 +210,7 @@ export class IndexerProcessor {
   }
 
   /**
-   * チャンクを埋め込む（100チャンクごとにバッチ並列処理）
+   * チャンクを埋め込む（バッチ一括処理、最大96個ずつAPI呼び出し）
    */
   private async embedChunks(chunks: ChunkMetadata[]): Promise<{ vectors: number[][]; chunkIds: string[] }> {
     const progressBar = new cliProgress.SingleBar({
@@ -225,26 +225,76 @@ export class IndexerProcessor {
 
     const allResults: Array<{ vector: number[]; chunkId: string; success: boolean }> = [];
 
-    // 100チャンクごとにバッチ処理
+    // API制限: 最大96テキスト/リクエスト
+    const API_MAX_BATCH_SIZE = 96;
+    
+    const totalBatches = Math.ceil(chunks.length / this.config.batchSize);
+    const totalApiCalls = Math.ceil(chunks.length / API_MAX_BATCH_SIZE);
+    
+    console.log(`\n[Embeddings] 設定バッチサイズ: ${this.config.batchSize}, 総バッチ数: ${totalBatches}`);
+    console.log(`[Embeddings] API制限対応: 最大${API_MAX_BATCH_SIZE}テキスト/リクエスト`);
+    console.log(`[Embeddings] 推定API呼び出し回数: ${totalApiCalls}回\n`);
+
+    // バッチごとに処理
     for (let i = 0; i < chunks.length; i += this.config.batchSize) {
+      const batchNum = Math.floor(i / this.config.batchSize) + 1;
       const batch = chunks.slice(i, Math.min(i + this.config.batchSize, chunks.length));
       
-      // バッチ内は並列処理
-      const batchPromises = batch.map(async (chunk) => {
+      console.log(`[バッチ ${batchNum}/${totalBatches}] ${batch.length}チャンクを処理中...`);
+      
+      // バッチを96個ずつのサブバッチに分割してAPI呼び出し
+      for (let j = 0; j < batch.length; j += API_MAX_BATCH_SIZE) {
+        const subBatch = batch.slice(j, Math.min(j + API_MAX_BATCH_SIZE, batch.length));
+        const subBatchNum = Math.floor(j / API_MAX_BATCH_SIZE) + 1;
+        const totalSubBatches = Math.ceil(batch.length / API_MAX_BATCH_SIZE);
+        
         try {
-          const vector = await this.embeddingService.embedTexts([chunk.chunk_text]);
-          progressBar.update(++completed);
-          return { vector: vector[0]!, chunkId: chunk.chunk_id, success: true };
+          // サブバッチを1回のAPI呼び出しで処理
+          const subBatchTexts = subBatch.map(c => c.chunk_text);
+          const vectors = await this.embeddingService.embedTexts(subBatchTexts);
+          
+          // 結果を格納
+          for (let k = 0; k < subBatch.length; k++) {
+            const chunk = subBatch[k]!;
+            const vector = vectors[k]!;
+            
+            // ゼロベクトルチェック
+            const isZeroVector = vector.every(v => v === 0);
+            if (isZeroVector) {
+              console.log(`\n⚠️  [${chunk.chunk_id}] ゼロベクトルが返されました`);
+              allResults.push({ vector, chunkId: chunk.chunk_id, success: false });
+            } else {
+              allResults.push({ vector, chunkId: chunk.chunk_id, success: true });
+            }
+            
+            progressBar.update(++completed);
+          }
+          
+          // サブバッチ間で短い待機（レート制限回避）
+          if (j + API_MAX_BATCH_SIZE < batch.length) {
+            await new Promise(resolve => setTimeout(resolve, 500)); // 0.5秒待機
+          }
         } catch (e: any) {
-          progressBar.update(++completed);
-          console.error(`\n[Embeddings] エラー（chunk_id: ${chunk.chunk_id}）: ${e?.message ?? e}`);
-          // エラー時はゼロベクトルで埋める
-          return { vector: new Array(1536).fill(0), chunkId: chunk.chunk_id, success: false };
+          console.error(`\n❌ バッチ ${batchNum} サブバッチ ${subBatchNum}/${totalSubBatches} エラー（${subBatch.length}チャンク）: ${e?.message ?? e}`);
+          
+          // エラー時はサブバッチをゼロベクトルで埋める
+          for (const chunk of subBatch) {
+            allResults.push({ 
+              vector: new Array(1536).fill(0), 
+              chunkId: chunk.chunk_id, 
+              success: false 
+            });
+            progressBar.update(++completed);
+          }
         }
-      });
-
-      const batchResults = await Promise.all(batchPromises);
-      allResults.push(...batchResults);
+      }
+      
+      // バッチ間で待機（レート制限回避）
+      if (i + this.config.batchSize < chunks.length) {
+        const waitMs = 2000; // 2秒待機
+        console.log(`  → バッチ ${batchNum} 完了。次のバッチまで${waitMs}ms待機...\n`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
     }
 
     progressBar.stop();
@@ -253,9 +303,10 @@ export class IndexerProcessor {
     const chunkIds = allResults.map(r => r.chunkId);
     const successCount = allResults.filter(r => r.success).length;
     
-    console.log(`  ✓ 成功: ${successCount}/${chunks.length} チャンク`);
+    console.log(`\n  ✓ 成功: ${successCount}/${chunks.length} チャンク`);
     if (successCount < chunks.length) {
-      console.log(`  ⚠ 失敗: ${chunks.length - successCount} チャンク（ゼロベクトルで埋めました）`);
+      console.log(`  ❌ 失敗: ${chunks.length - successCount} チャンク（ゼロベクトルで埋めました）`);
+      console.log(`  ⚠️  警告: 失敗したチャンクはベクトル検索で機能しません\n`);
     }
 
     return { vectors, chunkIds };

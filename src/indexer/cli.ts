@@ -9,10 +9,18 @@ async function main() {
   
   // 環境変数から設定を読み込み
   const csvPath = String(process.env.INDEXER_CSV_PATH ?? '').trim() || 'output/crawl.csv';
-  const indexName = String(process.env.INDEXER_INDEX_NAME ?? '').trim() || 'default';
+  
+  // INDEXER_INDEX_NAMEが未設定の場合、CSVファイル名（拡張子なし）を使用
+  let indexName = String(process.env.INDEXER_INDEX_NAME ?? '').trim();
+  if (!indexName) {
+    const csvFileName = path.basename(csvPath);
+    indexName = csvFileName.replace(/\.csv$/i, '') || 'default';
+  }
+  
   const outputDir = String(process.env.INDEXER_OUTPUT_DIR ?? '').trim() || 'output/indexes';
   const embeddingModel = String(process.env.INDEXER_EMBEDDING_MODEL ?? '').trim() || 'cohere.embed-v4:0';
   const regionsStr = String(process.env.INDEXER_AWS_REGION ?? '').trim() || 'ap-northeast-1';
+  const providerStr = String(process.env.INDEXER_EMBEDDING_PROVIDER ?? '').trim() || 'bedrock';
   
   const maxChunkSizeEnv = String(process.env.INDEXER_MAX_CHUNK_SIZE ?? '').trim();
   const minChunkSizeEnv = String(process.env.INDEXER_MIN_CHUNK_SIZE ?? '').trim();
@@ -23,6 +31,7 @@ async function main() {
   const batchSize = Number.isFinite(Number(batchSizeEnv)) ? Math.trunc(Number(batchSizeEnv)) : 10;
   
   const regions = parseRegions(regionsStr);
+  const provider = (providerStr === 'cohere-api' || providerStr === 'bedrock') ? providerStr : 'bedrock';
 
   const config: IndexerConfig = {
     csvPath: path.resolve(process.cwd(), csvPath),
@@ -30,6 +39,7 @@ async function main() {
     outputDir: path.resolve(process.cwd(), outputDir),
     embeddingModel,
     regions,
+    provider: provider as 'bedrock' | 'cohere-api',
     maxChunkSize,
     minChunkSize,
     batchSize
@@ -42,6 +52,7 @@ async function main() {
     console.log('\n✅ インデックス作成が完了しました！');
     console.log('\n📁 生成されたファイル:');
     console.log(`   インデックス名: ${indexName}`);
+    console.log(`   プロバイダー: ${provider}`);
     console.log(`   ディレクトリ: ${path.join(outputDir, indexName)}/`);
     console.log(`     ├── chunks.parquet          (チャンクメタデータ)`);
     console.log(`     ├── vectors.faiss           (ベクトルインデックス)`);
@@ -50,9 +61,11 @@ async function main() {
     console.log('   .envに以下が設定されていれば、インデックス名だけで3ファイル全部読み込めます:');
     console.log(`   AGENT_INDEX_NAME=${indexName}`);
     console.log(`   AGENT_INDEX_DIR=${outputDir}`);
-    console.log('\n📊 リージョンフォールバック:');
-    console.log(`   利用可能リージョン数: ${regions.length}`);
-    console.log(`   順序: ${regions.join(' -> ')}`);
+    if (provider === 'bedrock') {
+      console.log('\n📊 リージョンフォールバック:');
+      console.log(`   利用可能リージョン数: ${regions.length}`);
+      console.log(`   順序: ${regions.join(' -> ')}`);
+    }
     
     process.exit(0);
   } catch (e: any) {

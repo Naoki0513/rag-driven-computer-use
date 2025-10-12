@@ -21,7 +21,6 @@ export interface PageRecord {
   URL?: string;
   site?: string;
   snapshotforai?: string;
-  'snapshotfor AI'?: string;  // 後方互換
   'snapshotin MD'?: string;
   timestamp?: string;
   depth?: number;
@@ -45,6 +44,7 @@ export interface IndexerConfig {
   outputDir: string;           // 出力ディレクトリ（例: "output/indexes"）
   embeddingModel: string;
   regions: string[];           // リージョンリスト（フォールバック用）
+  provider: 'bedrock' | 'cohere-api';  // 埋め込みプロバイダー
   maxChunkSize: number;
   minChunkSize: number;
   batchSize: number;

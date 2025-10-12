@@ -1,5 +1,4 @@
 export type ToolUseInput =
-  | { name: 'run_query'; input: { query: string }; toolUseId: string }
   | { name: 'browser_login'; input: { url: string; query?: string }; toolUseId: string }
   | { name: 'browser_goto'; input: { url?: string; id?: string; autoLogin?: boolean; query?: string }; toolUseId: string }
   | { name: 'browser_click'; input: { ref: string; query: string }; toolUseId: string }
@@ -7,6 +6,7 @@ export type ToolUseInput =
   | { name: 'browser_press'; input: { ref: string; key: string; query: string }; toolUseId: string }
   | { name: 'browser_snapshot'; input: {}; toolUseId: string }
   | { name: 'snapshot_search'; input: { keywordQuery: string; rerankQuery: string; topK?: number }; toolUseId: string }
+  | { name: 'snapshot_fetch'; input: { urls?: string[]; ids?: string[] }; toolUseId: string }
   | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string };
 
 

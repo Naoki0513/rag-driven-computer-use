@@ -128,8 +128,8 @@ async function duckdbValidate(csvPath: string): Promise<void> {
   const tsBad = await getSingle('SELECT COUNT(*) AS bad FROM v WHERE COALESCE("timestamp", \'\') = \'\'');
   if (Number(tsBad.bad) !== 0) throw new Error('DuckDB: timestamp 列に空値があります');
   // スナップショット列の基本チェック（列存在とある程度の非空）
-  const aiNonEmpty = await getSingle('SELECT COUNT(*) AS c FROM v WHERE LENGTH(COALESCE("snapshotfor AI", \'\')) > 0');
-  if (!aiNonEmpty.c || Number(aiNonEmpty.c) < 1) throw new Error('DuckDB: "snapshotfor AI" 列が空です');
+  const aiNonEmpty = await getSingle('SELECT COUNT(*) AS c FROM v WHERE LENGTH(COALESCE(snapshotforai, \'\')) > 0');
+  if (!aiNonEmpty.c || Number(aiNonEmpty.c) < 1) throw new Error('DuckDB: snapshotforai 列が空です');
   await new Promise<void>((resolve) => conn.close(() => resolve()));
 }
 
