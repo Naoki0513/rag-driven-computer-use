@@ -92,3 +92,4 @@ export function createIndexLoaderFromEnv(): IndexLoader | null {
   return new IndexLoader(indexName, indexDir);
 }
 
+
