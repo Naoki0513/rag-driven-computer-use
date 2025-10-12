@@ -63,16 +63,16 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'snapshot_search',
-          description: '全ページの "snapshotforai" を一括取得し階層チャンク分割。keywordQuery(AND部分一致, 大文字小文字無視)でチャンクを絞り込み、rerankQueryでCohere Rerankにより意味で並べ替え、上位K件(未指定時は5件)の {id,url,chunk} を返します（リランク時のみURLもテキストに付加）。',
+          description: 'インデックス化されたチャンクを使用した高度な検索を実行します。処理フロー: 1) Parquetファイルから事前分割済みチャンクを全件読み込み 2) keywordQuery（AND部分一致、大文字小文字無視）でチャンクを絞り込み 3) 絞り込まれたチャンクに対してベクトル検索を実行（topK×10件を取得、デフォルトは100件） 4) ベクトル検索結果をCohere Rerankで最終的にtopK件（デフォルトは10件）に絞り込み 5) 最終結果として {id,url,chunk} を返却（リランク時はURLもテキストに付加）。注意: AGENT_INDEX_NAMEとAGENT_INDEX_DIRの環境変数設定が必須です。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                keywordQuery: { type: 'string', description: 'OR部分一致で使う小粒のキーワード（カンマ区切り）' },
-                rerankQuery: { type: 'string', description: '意味重視で並べ替えるクエリ' },
-                topK: { type: 'number', description: '返却する上位件数（未指定時は5、上限は環境設定に従う）' },
+                keywordQuery: { type: 'string', description: 'AND部分一致で使うキーワード（カンマ区切り）。すべてのキーワードを含むチャンクのみを抽出' },
+                vectorQuery: { type: 'string', description: 'ベクトル検索とリランクで使用する意味クエリ。より意味的に関連性の高い結果を取得' },
+                topK: { type: 'number', description: '最終的に返却する上位件数（未指定時は10件）。ベクトル検索ではこの10倍の件数を取得してからリランクで絞り込む' },
               },
-              required: ['keywordQuery', 'rerankQuery'],
+              required: ['keywordQuery', 'vectorQuery'],
             },
           },
         },

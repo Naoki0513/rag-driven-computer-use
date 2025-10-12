@@ -77,14 +77,14 @@ export class CsvWriter {
       const currentId = this.nextId;
       this.nextId += 1;
       this.urlToIdMap.set(url, currentId);
-      // プレースホルダー行をアップサート（既にフル行があれば保持し、無ければ追加）
-      await this.replaceOrAppendRow([
+      // プレースホルダ行を追記（フルリライトしない）
+      await this.appendRow([
         url,
         String(currentId),
         '',
         '',
         '',
-      ], false);
+      ]);
       try { console.info(`[CSV] URL discovered (placeholder upserted) ID=${currentId} -> ${url}`); } catch {}
       return currentId;
     });
@@ -131,14 +131,14 @@ export class CsvWriter {
         return 'skip-dup';
       }
 
-      // 書込み（新規 or 上書き）
-      await this.replaceOrAppendRow([
+      // 書込み（追記のみ）
+      await this.appendRow([
         node.url,
         String(idToUse),
         node.site,
         snapshotForAIJson,
         node.timestamp,
-      ], true);
+      ]);
 
       // インデックス更新
       this.fullDataWritten.add(node.url);

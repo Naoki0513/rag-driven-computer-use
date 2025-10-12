@@ -20,7 +20,7 @@ ${schemaSection}
 - 本エージェントはデータベース(pages)に保管されたURL/IDのサイトのみを対象とし、それ以外のサイトへはアクセスしない。
 フロー
 - フェーズ1 PLAN
-  1) 候補抽出: snapshot_search {"keywordQuery":"カンマ区切りのキーワード","rerankQuery":"意味クエリ"} を単独で用い、pages 全件の "snapshotforai" を階層チャンク化 → OR部分一致で絞り込み（キーワードはカンマ区切り, 大文字小文字無視） → URLも付与してリランク → 上位 {id,url,chunk} を得る。
+  1) 候補抽出: snapshot_search {"keywordQuery":"カンマ区切りのキーワード","vectorQuery":"意味クエリ"} を単独で用い、事前分割済みチャンク（Parquet）からキーワードAND検索で絞り込み → ベクトル検索でtopK×10件（デフォルト100件）を取得 → Cohere Rerankで最終topK件（デフォルト10件）に絞り込み → 上位 {id,url,chunk} を得る。
   2) 必要に応じて snapshot_search を繰り返し、到達すべき URL/ID と操作候補(ref/role+name/href)を具体化する。チャンクでは不十分で完全なスナップショットが必要な場合は snapshot_fetch を使用。
   3) ToDo 作成/更新: todo {"actions":[...]} で到達 URL/ID、操作対象、入力値/キーまで具体化。
 - フェーズ2 EXECUTE
@@ -32,7 +32,7 @@ ${schemaSection}
   4) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
 
 ツールの役割
-- snapshot_search: pages 全件の "snapshotforai" を階層チャンク化し、keywordQuery(OR部分一致, 大文字小文字無視)で絞り込み、rerankQuery で意味リランクして上位5件の {id,url,chunk} を返す（リランク時のみURLをテキストに付加）
+- snapshot_search: 事前分割済みチャンク（Parquet）を使用した高度な検索。keywordQuery(AND部分一致, 大文字小文字無視)でチャンクを絞り込み → vectorQuery でベクトル検索（topK×10件、デフォルト100件） → Cohere Rerankで最終topK件（デフォルト10件）の {id,url,chunk} を返す（注意: AGENT_INDEX_NAMEとAGENT_INDEX_DIRの環境変数設定が必須）
 - snapshot_fetch: snapshot_searchで取得したURLまたはIDを指定して、CSVから該当ページのsnapshotforaiの完全なテキストを取得。チャンクでは不足する場合に使用
 - todo: ToDo を追加/完了/編集。常に todo.md の現在内容を返す
 - browser_goto: URL 遷移または id→URL 解決して遷移。初回アクセスは必ず {autoLogin:true} を付与してログインを試行。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位3件のみ返却

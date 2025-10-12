@@ -357,6 +357,7 @@ export async function converseLoop(
           }});
         } else if (name === 'snapshot_search') {
           const inp = (toolUse as any).input ?? {};
+          // snapshot_searchは I/O集約的なので並列実行可能
           parallelTasks.push({ index: i, toolUseId, run: async () => {
             console.log(`Calling tool: snapshot_search with input: ${JSON.stringify(inp).slice(0, 500)}${JSON.stringify(inp).length > 500 ? '...' : ''}`);
             const result = await snapshotSearch(inp);

@@ -1,24 +1,8 @@
-import { attachTodos, formatToolError, chunkSnapshotText, rerankPlainTextDocuments } from './util.js';
-import { queryAll } from '../duckdb.js';
-
-type SnapshotRow = { snapshot?: string; url?: string; id?: string };
-
-type ChunkDoc = { chunk: string; url: string; id: string };
-
-function normalizeSnapshotText(raw: string): string {
-  let s = String(raw ?? '');
-  let t = s.trim();
-  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-    t = t.slice(1, -1);
-  }
-  t = t
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"');
-  t = t.replace(/\\\\/g, '\\');
-  return t;
-}
+import { attachTodos, formatToolError, rerankPlainTextDocuments } from './util.js';
+import { createIndexLoaderFromEnv } from '../../indexer/loader.js';
+import { EmbeddingsService } from '../../indexer/embeddings.js';
+import type { ChunkMetadata } from '../../indexer/types.js';
+import { recordVectorSearchCallStart, recordVectorSearchCallSuccess, recordVectorSearchCallError, recordVectorSearchUsage } from '../observability.js';
 
 function splitKeywords(input: string): string[] {
   return String(input || '')
@@ -28,89 +12,174 @@ function splitKeywords(input: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export async function snapshotSearch(input: { keywordQuery: string; rerankQuery: string; topK?: number }): Promise<string> {
+export async function snapshotSearch(input: { keywordQuery: string; vectorQuery: string; topK?: number }): Promise<string> {
   try {
     const keywordQuery = String((input as any)?.keywordQuery || '').trim();
-    const rerankQuery = String((input as any)?.rerankQuery || '').trim();
+    const vectorQuery = String((input as any)?.vectorQuery || '').trim();
     const topKInput = Math.trunc(Number((input as any)?.topK));
-    if (!keywordQuery || !rerankQuery) {
-      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: keywordQuery と rerankQuery は必須です' });
+    
+    if (!keywordQuery || !vectorQuery) {
+      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: keywordQuery と vectorQuery は必須です' });
       return JSON.stringify(payload);
     }
 
-    const envMax = String(process.env.AGENT_SNAPSHOT_MAX_CHUNK_SIZE || '').trim();
-    const envMin = String(process.env.AGENT_SNAPSHOT_MIN_CHUNK_SIZE || '').trim();
-    const maxChunkSize = Number.isFinite(Number(envMax)) ? Math.max(100, Math.trunc(Number(envMax))) : 5500;
-    const minChunkSize = Number.isFinite(Number(envMin)) ? Math.max(50, Math.trunc(Number(envMin))) : 500;
-
-    // 1) 全レコードから snapshot と url/id を一括取得
     const t0 = Date.now();
-    const rows = await queryAll<SnapshotRow>(
-      'SELECT snapshotforai AS snapshot, "URL" AS url, CAST(id AS VARCHAR) AS id FROM pages'
-    );
+    
+    // インデックスローダーを作成
+    const indexLoader = createIndexLoaderFromEnv();
+    if (!indexLoader) {
+      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: AGENT_INDEX_NAME が未設定です。インデックスを使用するには環境変数を設定してください。' });
+      return JSON.stringify(payload);
+    }
 
-    // 2) 並列でチャンク化（URL/IDごと）
-    const chunksPerRow = await Promise.all(rows.map(async (r) => {
-      const snapshotRaw = typeof (r as any)?.snapshot === 'string' ? (r as any).snapshot as string : String((r as any)?.snapshot ?? '');
-      const snapshot = normalizeSnapshotText(snapshotRaw);
-      const url = String((r as any)?.url ?? '').trim();
-      const id = String((r as any)?.id ?? '').trim();
-      if (!snapshot || (!url && !id)) return [] as ChunkDoc[];
-      const chunks = chunkSnapshotText(snapshot, maxChunkSize, minChunkSize);
-      return chunks.map((c) => ({ chunk: c, url, id }));
-    }));
-    const allChunks: ChunkDoc[] = ([] as ChunkDoc[]).concat(...chunksPerRow);
-    try {
-      console.info(`[snapshot_search] rows=${rows.length} totalChunks=${allChunks.length} keywordQuery="${keywordQuery}" rerankQuery="${rerankQuery}"`);
-    } catch {}
+    // 1) Parquetからチャンクメタデータを全件読み込み
+    console.info(`[snapshot_search] チャンクメタデータを読み込み中...`);
+    const allChunks = await indexLoader.loadAllChunks();
+    console.info(`[snapshot_search] 総チャンク数: ${allChunks.length}`);
 
     if (!allChunks.length) {
       const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [] });
       return JSON.stringify(payload);
     }
 
-    // 3) AND 部分一致（大文字小文字無視）でフィルタ（チャンク本文のみ。URLは含めない）
+    // 2) キーワードAND検索で絞り込み
     const terms = splitKeywords(keywordQuery);
-    const filtered: ChunkDoc[] = terms.length
-      ? allChunks.filter(({ chunk }) => {
-          const lc = chunk.toLowerCase();
-          for (const kw of terms) { if (lc.includes(kw)) return true; }
-          return false;
+    const keywordFiltered: ChunkMetadata[] = terms.length
+      ? allChunks.filter((chunk) => {
+          const lc = chunk.chunk_text.toLowerCase();
+          // AND検索: すべてのキーワードが含まれる必要がある
+          for (const kw of terms) {
+            if (!lc.includes(kw)) return false;
+          }
+          return true;
         })
       : allChunks;
-    try {
-      console.info(`[snapshot_search] keyword(OR) terms=${JSON.stringify(terms)} matchedChunks=${filtered.length}`);
-    } catch {}
+    
+    console.info(`[snapshot_search] keyword(AND) terms=${JSON.stringify(terms)} matchedChunks=${keywordFiltered.length}/${allChunks.length}`);
 
-    if (!filtered.length) {
-      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [] });
+    if (!keywordFiltered.length) {
+      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'キーワード検索で一致するチャンクが見つかりませんでした' });
       return JSON.stringify(payload);
     }
 
-    // 4) Rerank（URLを先頭に付加してリランクの意味手掛かりにする）
-    const rerankDocs = filtered.map((d) => ({ text: `${d.url}\n\n${d.chunk}` }));
+    // 3) ベクトル検索の準備
     const envDefaultTop = Number(process.env.AGENT_SEARCH_TOP_K);
-    const defaultTop = Number.isFinite(envDefaultTop) && envDefaultTop > 0 ? envDefaultTop : 5;
+    const defaultTop = Number.isFinite(envDefaultTop) && envDefaultTop > 0 ? envDefaultTop : 10;
     const requestedTop = Number.isFinite(topKInput) && topKInput > 0 ? topKInput : defaultTop;
-    const k = Math.min(requestedTop, rerankDocs.length);
-    if (filtered.length > 1000) {
-      try { console.info(`[snapshot_search] rerank source capped to 1000 by implementation (filtered=${filtered.length})`); } catch {}
-    }
-    try {
-      console.info(`[snapshot_search] rerankCandidates=${rerankDocs.length} topK=${k}`);
-    } catch {}
-    const reranked = await rerankPlainTextDocuments(rerankQuery, rerankDocs.map((d) => d.text), { topK: k, category: 'search', name: 'Snapshot Search' });
-    const top = reranked.slice(0, k).map((r) => {
-      const meta = filtered[r.index];
-      if (!meta) return null;
-      return { id: meta.id, url: meta.url, chunk: meta.chunk };
-    }).filter(Boolean) as Array<{ id: string; url: string; chunk: string }>;
-    try {
-      const ms = Date.now() - t0;
-      console.info(`[snapshot_search] returned=${top.length} elapsedMs=${ms}`);
-    } catch {}
+    const vectorSearchK = Math.min(requestedTop * 10, keywordFiltered.length); // topK×10件
+    
+    console.info(`[snapshot_search] ベクトル検索: topK=${requestedTop}, vectorSearchK=${vectorSearchK}`);
 
-    const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: top });
+    // Embedding Serviceの初期化
+    const embeddingModel = String(process.env.AGENT_EMBEDDING_MODEL || '').trim() || 'cohere.embed-v4:0';
+    const regionsStr = String(process.env.AGENT_AWS_REGION || '').trim() || 'ap-northeast-1';
+    const providerStr = String(process.env.AGENT_EMBEDDING_PROVIDER || '').trim() || 'bedrock';
+    const regions = regionsStr.split(',').map(r => r.trim()).filter(r => r.length > 0);
+    const provider = (providerStr === 'cohere-api' || providerStr === 'bedrock') ? providerStr as 'bedrock' | 'cohere-api' : 'bedrock';
+    
+    const embeddingService = new EmbeddingsService(regions, embeddingModel, provider);
+
+    // クエリをベクトル化（Langfuseに記録）
+    console.info(`[snapshot_search] クエリをベクトル化中: "${vectorQuery}"`);
+    const vectorSearchHandle = recordVectorSearchCallStart({
+      modelId: embeddingModel,
+      provider,
+      input: {
+        query: vectorQuery,
+        keywordFilteredChunks: keywordFiltered.length,
+        requestedTopK: requestedTop
+      },
+      name: 'Vector Search (Embed + Search)'
+    });
+    
+    let queryVector: number[];
+    try {
+      queryVector = await embeddingService.embedQuery(vectorQuery);
+      // 使用量を記録（クエリ文字数 + フィルタ済みドキュメント数）
+      try { recordVectorSearchUsage(vectorSearchHandle, vectorQuery.length, keywordFiltered.length); } catch {}
+    } catch (e: any) {
+      recordVectorSearchCallError(vectorSearchHandle, e, { stage: 'embed_query', modelId: embeddingModel, provider });
+      throw e;
+    }
+
+    // ベクトルストアを読み込み
+    console.info(`[snapshot_search] ベクトルストアを読み込み中...`);
+    const vectorStore = await indexLoader.loadVectorStore();
+
+    // キーワードフィルタリングされたチャンクのchunk_idを取得
+    const filteredChunkIds = new Set(keywordFiltered.map(c => c.chunk_id));
+
+    // 4) ベクトル検索を実行（全ベクトルから検索し、後でフィルタリング）
+    // 十分な数を取得するために、vectorSearchK * 2 を検索して後でフィルタリング
+    const expandedK = Math.min(vectorSearchK * 2, vectorStore.getSize());
+    console.info(`[snapshot_search] ベクトル検索実行: expandedK=${expandedK}`);
+    const vectorResults = vectorStore.search(queryVector, expandedK);
+
+    // キーワードフィルタリングされたチャンクのみを残す
+    const filteredVectorResults = vectorResults
+      .filter(r => filteredChunkIds.has(r.chunkId))
+      .slice(0, vectorSearchK);
+
+    console.info(`[snapshot_search] ベクトル検索結果: ${filteredVectorResults.length}件`);
+    
+    // ベクトル検索成功を記録
+    recordVectorSearchCallSuccess(vectorSearchHandle, {
+      resultsCount: filteredVectorResults.length,
+      metadata: {
+        expandedK,
+        vectorSearchK,
+        keywordFilteredChunks: keywordFiltered.length,
+        finalVectorResults: filteredVectorResults.length
+      }
+    });
+
+    if (!filteredVectorResults.length) {
+      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'ベクトル検索で結果が得られませんでした' });
+      return JSON.stringify(payload);
+    }
+
+    // チャンクIDからメタデータを取得
+    const chunkMap = await indexLoader.findChunksByIds(filteredVectorResults.map(r => r.chunkId));
+
+    // 5) リランク用のドキュメントを準備
+    const rerankDocs = filteredVectorResults
+      .map(r => {
+        const chunk = chunkMap.get(r.chunkId);
+        if (!chunk) return null;
+        return { text: `${chunk.url}\n\n${chunk.chunk_text}`, chunkId: r.chunkId };
+      })
+      .filter(Boolean) as Array<{ text: string; chunkId: string }>;
+
+    console.info(`[snapshot_search] リランク実行: ${rerankDocs.length}ドキュメント → topK=${requestedTop}`);
+    
+    // 6) リランクで最終結果を取得
+    const reranked = await rerankPlainTextDocuments(
+      vectorQuery, 
+      rerankDocs.map(d => d.text), 
+      { topK: requestedTop, category: 'search', name: 'Snapshot Search (Vector)' }
+    );
+
+    const top = reranked.slice(0, requestedTop).map((r) => {
+      const doc = rerankDocs[r.index];
+      if (!doc) return null;
+      const chunk = chunkMap.get(doc.chunkId);
+      if (!chunk) return null;
+      return { 
+        id: String(chunk.page_id), 
+        url: chunk.url, 
+        chunk: chunk.chunk_text 
+      };
+    }).filter(Boolean) as Array<{ id: string; url: string; chunk: string }>;
+
+    const ms = Date.now() - t0;
+    console.info(`[snapshot_search] 完了: ${top.length}件返却, 処理時間=${ms}ms`);
+    console.info(`[snapshot_search] 統計: totalChunks=${allChunks.length}, keywordFiltered=${keywordFiltered.length}, vectorSearchResults=${filteredVectorResults.length}, finalResults=${top.length}`);
+
+    const payload = await attachTodos({ 
+      ok: true, 
+      action: 'snapshot_search', 
+      results: top
+    });
     return JSON.stringify(payload);
   } catch (e: any) {
     const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: formatToolError(e) });

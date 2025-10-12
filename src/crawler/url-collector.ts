@@ -58,7 +58,6 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
     await page.waitForLoadState('load', { timeout: t }).catch(() => {});
     await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }).catch(() => {});
-    await page.waitForTimeout(t);
 
     let node = await capture(page, effectiveBaseUrl);
     try { console.info(`[ROOT URL] ${node.url}`); } catch {}
@@ -70,7 +69,6 @@ export async function collectUrlsFromInitialPage(config: CollectorConfig): Promi
         await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: t }).catch(() => {});
         try { await page.waitForLoadState('load', { timeout: t }); } catch {}
         try { await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }); } catch {}
-        await page.waitForTimeout(t);
         node = await capture(page, effectiveBaseUrl);
         try { console.info(`[ROOT URL] ${node.url}`); } catch {}
         snapshotUrls = extractInternalUrlsFromSnapshot(node.snapshotForAI, node.url, effectiveBaseUrl);
@@ -143,7 +141,6 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
     await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
     await page.waitForLoadState('load', { timeout: t }).catch(() => {});
     await page.waitForSelector('a[href], [role="link"], .rc-room, .sidebar', { state: 'attached', timeout: t }).catch(() => {});
-    await page.waitForTimeout(t);
 
     // リダイレクト後のURLが内部リンクかチェック（初期ページ）
     const initialUrl = normalizeUrl(page.url());
@@ -209,7 +206,6 @@ export async function collectAllInternalUrls(config: CollectorConfig & { shouldS
         await page.goto(currentUrl, { waitUntil: 'commit', timeout: t }).catch(() => {});
         try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
         await page.waitForLoadState('load', { timeout: t }).catch(() => {});
-        await page.waitForTimeout(t);
 
         // 途中でログインが切れてログイン画面へ飛ばされた場合に復帰
         if (!config.skipLogin) {

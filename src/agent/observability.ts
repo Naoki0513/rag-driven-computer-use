@@ -272,5 +272,89 @@ export function recordRerankUsage(handle: RerankCallHandle, documentsCount: numb
   }
 }
 
+// ===== Vector Search (Cohere Embed v4) 計測 =====
+export type VectorSearchCallContext = {
+  modelId: string;
+  provider: string;
+  input: Record<string, any>;
+  name?: string; // 任意の表示名（例: "Vector Search"）
+};
+
+export type VectorSearchCallHandle = {
+  generation?: any;
+};
+
+export function recordVectorSearchCallStart(ctx: VectorSearchCallContext): VectorSearchCallHandle {
+  try {
+    const client = initLangfuseIfPossible();
+    if (!client) return {};
+    const displayName = ctx.name || 'Vector Search';
+    let gen: any = null;
+    if (_currentTrace && typeof _currentTrace.generation === 'function') {
+      gen = _currentTrace.generation({
+        name: displayName,
+        model: ctx.modelId,
+        input: ctx.input,
+        metadata: { provider: ctx.provider },
+      });
+    } else {
+      gen = (client as any).generation({
+        name: displayName,
+        model: ctx.modelId,
+        input: ctx.input,
+        metadata: { provider: ctx.provider },
+      });
+    }
+    return { generation: gen };
+  } catch (_e) {
+    return {};
+  }
+}
+
+export function recordVectorSearchCallSuccess(handle: VectorSearchCallHandle, payload: { resultsCount?: number; metadata?: Record<string, any> }): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    const body = {
+      output: { resultsCount: payload.resultsCount },
+      metadata: payload.metadata,
+    } as any;
+    if (typeof gen.end === 'function') gen.end(body);
+    else if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
+export function recordVectorSearchCallError(handle: VectorSearchCallHandle, error: unknown, extra?: Record<string, any>): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    const errorMessage = String((error as any)?.message ?? error);
+    const body = {
+      level: 'ERROR',
+      status_message: errorMessage,
+      metadata: extra,
+    } as any;
+    if (typeof gen.end === 'function') gen.end(body);
+    else if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
+// Vector Search 用: クエリトークン推定（簡易）
+export function recordVectorSearchUsage(handle: VectorSearchCallHandle, queryLength: number, documentsCount: number): void {
+  try {
+    const gen: any = handle?.generation;
+    if (!gen) return;
+    // 簡易推定: クエリ文字数を4で割ってトークン数とする + ドキュメント数/100
+    const queryTokens = Math.ceil(queryLength / 4);
+    const docTokens = Math.ceil(documentsCount / 100);
+    const total = queryTokens + docTokens;
+    const body = { usageDetails: { input: total, total } } as any;
+    if (typeof gen.update === 'function') gen.update(body);
+  } catch (_e) {
+  }
+}
+
 
 

@@ -17,7 +17,6 @@ export async function login(page: Page, config: SessionConfig): Promise<void> {
     await page.goto(config.loginUrl, { waitUntil: 'domcontentloaded', timeout: t }).catch(() => {});
   }
   try { await page.waitForLoadState('load', { timeout: t }); } catch {}
-  await page.waitForTimeout(t);
 
   // ログイン済みの簡易判定: 明示的なログアウト要素があるか
   const hasLogout = await Promise.race([
@@ -78,7 +77,6 @@ export async function login(page: Page, config: SessionConfig): Promise<void> {
       const changed = await urlWaiter.catch(() => false);
       if (!changed) {
         try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
-        await page.waitForTimeout(500).catch(() => {});
       }
       // ログイン後、storageState を最新化
       try {

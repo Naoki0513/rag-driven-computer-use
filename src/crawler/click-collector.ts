@@ -161,8 +161,8 @@ export async function clickPointerAndCollect(
       // イベントリスナーのクリーンアップとタブ処理
       try {
         context.off('page', pageCreatedHandler);
-        // クリック後少し待って、新しいタブが完全に開かれるのを待つ
-        await page.waitForTimeout(500);
+        // クリック後、DOM 準備完了を明示待機（固定スリープ削減）
+        await page.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
         
         // 開かれたままの新しいページ（内部リンク）がある場合の処理
         // 内部リンクの場合もタブが開かれたままだとメモリを圧迫するため、
@@ -184,7 +184,14 @@ export async function clickPointerAndCollect(
       if (changed) {
         const newUrl = normalizeUrl(page.url());
         try { console.info(`[root=${rootUrl}] [level=${level}] URL changed -> ${newUrl}`); } catch {}
-        if (isInternalLink(newUrl, baseUrl)) discovered.add(newUrl);
+        // 外部リンクは即スキップ：スナップショット/CSV処理を行わず元ページへ復帰
+        if (!isInternalLink(newUrl, baseUrl)) {
+          try { console.info(`[root=${rootUrl}] [level=${level}] external navigation detected; skipping and returning -> ${rootUrl}`); } catch {}
+          try { await page.goto(rootUrl, { waitUntil: 'domcontentloaded', timeout: t }); } catch {}
+          // 次の候補へ（以降の処理はスキップ）
+          continue;
+        }
+        discovered.add(newUrl);
         try { await config?.onDiscovered?.(newUrl); } catch {}
         try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
         // 遷移直後にスナップショットを取得し、即座にフル行を書き込み＆rootQueueへ登録
@@ -234,7 +241,8 @@ export async function clickPointerAndCollect(
       if (changed) {
         try { console.info(`[root=${rootUrl}] [level=${level}] returning to original via reload -> ${rootUrl}`); } catch {}
         await page.goto(rootUrl, { waitUntil: 'domcontentloaded', timeout: t }).catch(() => {});
-        try { await page.waitForTimeout(200); } catch {}
+        
+        
       } else if (novelElems.length > 0) {
         const childBaseElems = new Set<string>([...baseElemSet, ...newElemSigs]);
         const childPath = [...path, `${it.role}:${labelName}`];
@@ -261,7 +269,6 @@ export async function clickPointerAndCollect(
         if (level === 0) {
           try { console.info(`[root=${rootUrl}] [level=${level}] reload after level-1 exploration -> ${rootUrl}`); } catch {}
           try { await page.goto(rootUrl, { waitUntil: 'domcontentloaded', timeout: t }); } catch {}
-          try { await page.waitForTimeout(200); } catch {}
         }
       }
     } catch (e) {
@@ -312,7 +319,6 @@ async function restorePageState(
     if (currentUrl !== rootUrl) {
       try { console.info(`[level=${level}] restoring to rootUrl: ${currentUrl} -> ${rootUrl}`); } catch {}
       await page.goto(rootUrl, { waitUntil: 'domcontentloaded', timeout }).catch(() => {});
-      await page.waitForTimeout(200);
     }
   } else if (level === 1 && parentClick) {
     // level=1の場合：level=0のrootURLに戻り、親要素をクリックして状態を再現
@@ -320,7 +326,6 @@ async function restorePageState(
     
     // level=0のrootURLに戻る
     await page.goto(level0RootUrl, { waitUntil: 'domcontentloaded', timeout }).catch(() => {});
-    await page.waitForTimeout(300);
     
     // 親要素をクリックしてlevel=1の状態を再現
     try {
