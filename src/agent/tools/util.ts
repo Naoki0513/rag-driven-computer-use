@@ -468,7 +468,14 @@ async function recordWebArenaTrajectoryStep(payload: any): Promise<void> {
     
     const { page } = await ensureSharedBrowserStarted();
     const url = String(payload?.snapshots?.url || page.url());
-    const snapshotText = getResolutionSnapshotText() || '';
+    let snapshotText = getResolutionSnapshotText() || '';
+    // 観測テキストが未取得の場合は、その場でスナップショットを撮影して保存
+    if (!snapshotText) {
+      try {
+        const snaps = await captureAndStoreSnapshot(page);
+        snapshotText = snaps.text || '';
+      } catch {}
+    }
     
     // 初回のみ: 初期StateInfo追加（WebArenaのenv.reset()相当）
     if (!_trajectoryInitialized) {
