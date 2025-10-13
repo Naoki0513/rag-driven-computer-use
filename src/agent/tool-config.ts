@@ -45,15 +45,14 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_goto',
-          description: '指定したURLまたはIDに基づき遷移します。IDが渡された場合はCSVからURLを解決して遷移。遷移後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のチャンクのみ返却します。',
+          description: '指定したURLまたはIDに基づき遷移します。IDが渡された場合はCSVからURLを解決して遷移。必要時のみ自動で認証（環境変数の資格情報＋storageState補填）を行い、遷移後は query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K により指定）のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 url: { type: 'string' },
                 id: { type: 'string', description: 'pages.id（文字列として受理）' },
-                autoLogin: { type: 'boolean', description: 'true の場合、今回の goto でログイン試行する（未指定時は初回のみ自動）' },
-                query: { type: 'string', description: '遷移後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
+                query: { type: 'string', description: '遷移後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
               },
               required: [],
             },
@@ -63,16 +62,16 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'snapshot_search',
-          description: 'インデックス化されたチャンクを使用した高度な検索を実行します。処理フロー: 1) Parquetファイルから事前分割済みチャンクを全件読み込み 2) keywordQuery（AND部分一致、大文字小文字無視）でチャンクを絞り込み 3) 絞り込まれたチャンクに対してベクトル検索を実行（topK×10件を取得、デフォルトは100件） 4) ベクトル検索結果をCohere Rerankで最終的にtopK件（デフォルトは10件）に絞り込み 5) 最終結果として {id,url,chunk} を返却（リランク時はURLもテキストに付加）。注意: AGENT_INDEX_NAMEとAGENT_INDEX_DIRの環境変数設定が必須です。',
+          description: 'インデックス化されたチャンクを使用した高度な検索を実行します。処理フロー: 1) Parquetファイルから事前分割済みチャンクを全件読み込み 2) keywords 配列（AND部分一致・小文字化して判定）でチャンクを絞り込み（例: {"keywords":["admin","orders","pending"]} は全語を含むチャンクのみ） 3) 絞り込まれたチャンクに対してベクトル検索を実行（topK×10件を取得、デフォルトは100件） 4) ベクトル検索結果をCohere Rerankで最終的にtopK件（デフォルトは10件）に絞り込み 5) 最終結果として {id,url,chunk} を返却。注意: AGENT_INDEX_NAMEとAGENT_INDEX_DIRの環境変数設定が必須です。キーワードが多すぎて0件の場合はキーワードを減らす/一般化するなど再試行してください。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
-                keywordQuery: { type: 'string', description: 'AND部分一致で使うキーワード（カンマ区切り）。すべてのキーワードを含むチャンクのみを抽出' },
+                keywords: { type: 'array', items: { type: 'string' }, description: 'AND部分一致で使うキーワード配列。全てのキーワードを含むチャンクのみを抽出（小文字比較）' },
                 vectorQuery: { type: 'string', description: 'ベクトル検索とリランクで使用する意味クエリ。より意味的に関連性の高い結果を取得' },
                 topK: { type: 'number', description: '最終的に返却する上位件数（未指定時は10件）。ベクトル検索ではこの10倍の件数を取得してからリランクで絞り込む' },
               },
-              required: ['keywordQuery', 'vectorQuery'],
+              required: ['keywords', 'vectorQuery'],
             },
           },
         },
@@ -93,29 +92,17 @@ export function buildToolConfig(): ToolConfiguration {
           },
         },
       },
-      {
-        toolSpec: {
-          name: 'browser_login',
-          description: 'ログイン先URLへ遷移し、環境変数の資格情報でログインします。ログイン後、query（意味クエリ）に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
-          inputSchema: {
-            json: {
-              type: 'object',
-              properties: { url: { type: 'string' }, query: { type: 'string' } },
-              required: ['url'],
-            },
-          },
-        },
-      },
+      
       {
         toolSpec: {
           name: 'browser_click',
-          description: '要素をクリックします。ref（必須）で要素を指定し、query（必須）でクリック後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素をクリックします。ref（必須）で要素を指定し、query（必須）でクリック後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K により指定）のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
-                query: { type: 'string', description: 'クリック後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
+                query: { type: 'string', description: 'クリック後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
               },
               required: ['ref', 'query'],
             },
@@ -125,14 +112,14 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_input',
-          description: '要素にテキストを入力します。ref（必須）で要素を指定し、text（必須）で入力内容、query（必須）で入力後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。入力後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にテキストを入力します。ref（必須）で要素を指定し、text（必須）で入力内容、query（必須）で入力後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。入力後は query に基づきスナップショットをチャンク分割+リランクし、上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K により指定）のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
                 text: { type: 'string', description: '入力するテキスト' },
-                query: { type: 'string', description: '入力後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
+                query: { type: 'string', description: '入力後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
               },
               required: ['ref', 'text', 'query'],
             },
@@ -142,14 +129,14 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_press',
-          description: '要素にキーボード押下を送ります。ref（必須）で要素を指定し、key（必須）で押下するキー、query（必須）で送信後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。送信後は query に基づきスナップショットをチャンク分割+リランクし、上位3件のみ返却します。',
+          description: '要素にキーボード押下を送ります。ref（必須）で要素を指定し、key（必須）で押下するキー、query（必須）で送信後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。送信後は query に基づきスナップショットをチャンク分割+リランクし、上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K により指定）のみ返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
                 key: { type: 'string', description: '押下するキー（例: Enter, Tab, Escape など）' },
-                query: { type: 'string', description: '送信後に探したい要素/情報の意味クエリ。上位3チャンクを返却' }
+                query: { type: 'string', description: '送信後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
               },
               required: ['ref', 'key', 'query'],
             },

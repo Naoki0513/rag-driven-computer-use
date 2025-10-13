@@ -228,37 +228,34 @@ export class IndexerProcessor {
     // API制限: 最大96テキスト/リクエスト
     const API_MAX_BATCH_SIZE = 96;
     
-    const totalBatches = Math.ceil(chunks.length / this.config.batchSize);
     const totalApiCalls = Math.ceil(chunks.length / API_MAX_BATCH_SIZE);
     
-    console.log(`\n[Embeddings] 設定バッチサイズ: ${this.config.batchSize}, 総バッチ数: ${totalBatches}`);
-    console.log(`[Embeddings] API制限対応: 最大${API_MAX_BATCH_SIZE}テキスト/リクエスト`);
+    console.log(`\n[Embeddings] API制限対応: 最大${API_MAX_BATCH_SIZE}テキスト/リクエスト`);
     console.log(`[Embeddings] 推定API呼び出し回数: ${totalApiCalls}回\n`);
 
-    // バッチごとに処理
-    for (let i = 0; i < chunks.length; i += this.config.batchSize) {
-      const batchNum = Math.floor(i / this.config.batchSize) + 1;
-      const batch = chunks.slice(i, Math.min(i + this.config.batchSize, chunks.length));
-      
-      console.log(`[バッチ ${batchNum}/${totalBatches}] ${batch.length}チャンクを処理中...`);
-      
-      // バッチを96個ずつのサブバッチに分割してAPI呼び出し
-      for (let j = 0; j < batch.length; j += API_MAX_BATCH_SIZE) {
-        const subBatch = batch.slice(j, Math.min(j + API_MAX_BATCH_SIZE, batch.length));
-        const subBatchNum = Math.floor(j / API_MAX_BATCH_SIZE) + 1;
-        const totalSubBatches = Math.ceil(batch.length / API_MAX_BATCH_SIZE);
-        
+    // 96件単位のサブバッチを全体から作成
+    const subBatches: Array<{ start: number; end: number }> = [];
+    for (let i = 0; i < chunks.length; i += API_MAX_BATCH_SIZE) {
+      subBatches.push({ start: i, end: Math.min(i + API_MAX_BATCH_SIZE, chunks.length) });
+    }
+
+    const totalSubBatches = subBatches.length;
+    const concurrency = Math.max(1, this.config.concurrency ?? 1);
+    console.log(`[Embeddings] サブバッチ総数: ${totalSubBatches} / 並列実行数: ${concurrency}`);
+
+    // 並列実行プール
+    let currentIndex = 0;
+    const runWorker = async (workerId: number) => {
+      while (currentIndex < subBatches.length) {
+        const myIndex = currentIndex++;
+        const { start, end } = subBatches[myIndex]!;
+        const subBatch = chunks.slice(start, end);
         try {
-          // サブバッチを1回のAPI呼び出しで処理
           const subBatchTexts = subBatch.map(c => c.chunk_text);
           const vectors = await this.embeddingService.embedTexts(subBatchTexts);
-          
-          // 結果を格納
           for (let k = 0; k < subBatch.length; k++) {
             const chunk = subBatch[k]!;
             const vector = vectors[k]!;
-            
-            // ゼロベクトルチェック
             const isZeroVector = vector.every(v => v === 0);
             if (isZeroVector) {
               console.log(`\n⚠️  [${chunk.chunk_id}] ゼロベクトルが返されました`);
@@ -266,36 +263,24 @@ export class IndexerProcessor {
             } else {
               allResults.push({ vector, chunkId: chunk.chunk_id, success: true });
             }
-            
             progressBar.update(++completed);
           }
-          
-          // サブバッチ間で短い待機（レート制限回避）
-          if (j + API_MAX_BATCH_SIZE < batch.length) {
-            await new Promise(resolve => setTimeout(resolve, 500)); // 0.5秒待機
-          }
         } catch (e: any) {
-          console.error(`\n❌ バッチ ${batchNum} サブバッチ ${subBatchNum}/${totalSubBatches} エラー（${subBatch.length}チャンク）: ${e?.message ?? e}`);
-          
-          // エラー時はサブバッチをゼロベクトルで埋める
+          console.error(`\n❌ サブバッチ ${myIndex + 1}/${totalSubBatches} エラー（${subBatch.length}チャンク）: ${e?.message ?? e}`);
           for (const chunk of subBatch) {
-            allResults.push({ 
-              vector: new Array(1536).fill(0), 
-              chunkId: chunk.chunk_id, 
-              success: false 
-            });
+            allResults.push({ vector: new Array(1536).fill(0), chunkId: chunk.chunk_id, success: false });
             progressBar.update(++completed);
           }
         }
       }
-      
-      // バッチ間で待機（レート制限回避）
-      if (i + this.config.batchSize < chunks.length) {
-        const waitMs = 2000; // 2秒待機
-        console.log(`  → バッチ ${batchNum} 完了。次のバッチまで${waitMs}ms待機...\n`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
-      }
+    };
+
+    // ワーカー起動
+    const workers: Promise<void>[] = [];
+    for (let w = 0; w < concurrency; w++) {
+      workers.push(runWorker(w));
     }
+    await Promise.all(workers);
 
     progressBar.stop();
 

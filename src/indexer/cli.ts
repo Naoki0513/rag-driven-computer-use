@@ -24,11 +24,11 @@ async function main() {
   
   const maxChunkSizeEnv = String(process.env.INDEXER_MAX_CHUNK_SIZE ?? '').trim();
   const minChunkSizeEnv = String(process.env.INDEXER_MIN_CHUNK_SIZE ?? '').trim();
-  const batchSizeEnv = String(process.env.INDEXER_BATCH_SIZE ?? '').trim();
+  const concurrencyEnv = String(process.env.INDEXER_EMBEDDING_CONCURRENCY ?? '').trim();
   
   const maxChunkSize = Number.isFinite(Number(maxChunkSizeEnv)) ? Math.trunc(Number(maxChunkSizeEnv)) : 5500;
   const minChunkSize = Number.isFinite(Number(minChunkSizeEnv)) ? Math.trunc(Number(minChunkSizeEnv)) : 500;
-  const batchSize = Number.isFinite(Number(batchSizeEnv)) ? Math.trunc(Number(batchSizeEnv)) : 10;
+  const concurrency = Number.isFinite(Number(concurrencyEnv)) ? Math.max(1, Math.trunc(Number(concurrencyEnv))) : 1;
   
   const regions = parseRegions(regionsStr);
   const provider = (providerStr === 'cohere-api' || providerStr === 'bedrock') ? providerStr : 'bedrock';
@@ -42,7 +42,7 @@ async function main() {
     provider: provider as 'bedrock' | 'cohere-api',
     maxChunkSize,
     minChunkSize,
-    batchSize
+    concurrency
   };
 
   try {

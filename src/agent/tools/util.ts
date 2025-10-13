@@ -100,6 +100,8 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
   }
 }
 
+// ensureAgentAuthenticated: 削除（認証は起動時の storageState のみに依存）
+
 async function takeSnapshots(page: Page): Promise<{ text: string; hash: string; url: string }> {
   // waitForTimeout を削除したため、高速にスナップショット取得
   const node = await captureNode(page, { depth: 0 });

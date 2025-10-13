@@ -6,7 +6,6 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import { addCachePoints, type Message } from './cacheUtils.js';
 import { buildToolConfig } from './tool-config.js';
-import { browserLogin } from './tools/browser-login.js';
 import { browserGoto } from './tools/browser-goto.js';
 import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
@@ -372,24 +371,13 @@ export async function converseLoop(
             console.log(`Tool result (snapshot_fetch): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
-        } else if (name === 'browser_login') {
-          const url = (toolUse as any).input?.url ?? '';
-          const queryText = (toolUse as any).input?.query ?? '';
-          browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_login ${JSON.stringify({ url, query: queryText })}`);
-            const result = await browserLogin(String(url), String(queryText || ''));
-            console.log(`Tool result (browser_login): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
-            return result;
-          }});
         } else if (name === 'browser_goto') {
           const url = String((toolUse as any).input?.url ?? '');
           const id = String((toolUse as any).input?.id ?? '');
-          const autoLogin = (toolUse as any).input?.autoLogin;
           const queryText = (toolUse as any).input?.query ?? '';
           browserTasks.push({ index: i, toolUseId, run: async () => {
-            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, id, autoLogin, query: queryText })}`);
-            const opts: { autoLogin?: boolean; isId?: boolean; query?: string } = {};
-            if (typeof autoLogin === 'boolean') opts.autoLogin = autoLogin;
+            console.log(`Calling tool: browser_goto ${JSON.stringify({ url, id, query: queryText })}`);
+            const opts: { isId?: boolean; query?: string } = {};
             if (queryText) opts.query = String(queryText);
             let result: string;
             if (id && !url) {

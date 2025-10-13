@@ -47,7 +47,8 @@ export interface IndexerConfig {
   provider: 'bedrock' | 'cohere-api';  // 埋め込みプロバイダー
   maxChunkSize: number;
   minChunkSize: number;
-  batchSize: number;
+  // 埋め込みサブバッチ（最大96件）を同時に投げる並列実行数
+  concurrency: number;
 }
 
 /**

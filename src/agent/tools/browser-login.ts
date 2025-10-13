@@ -119,7 +119,7 @@ export async function browserLogin(url: string, query?: string): Promise<string>
       try { await page.waitForLoadState('domcontentloaded', { timeout: t }); } catch {}
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
-      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query) : []; } catch {}
       const payload = await attachTodos({ ok: true, action: 'login', url, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
       return JSON.stringify(payload);
     } catch (e: any) {
@@ -128,7 +128,7 @@ export async function browserLogin(url: string, query?: string): Promise<string>
       let payload: any = { ok: formatToolError(e), action: 'login', url };
       if (snaps) {
         let top: Array<{ score: number; text: string }> = [];
-        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query) : []; } catch {}
         payload.snapshots = { top: top.map(({ text }) => ({ text })), url: snaps.url };
       }
       payload = await attachTodos(payload);

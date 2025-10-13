@@ -12,14 +12,29 @@ function splitKeywords(input: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export async function snapshotSearch(input: { keywordQuery: string; vectorQuery: string; topK?: number }): Promise<string> {
+function normalizeKeywords(input: any): string[] {
   try {
-    const keywordQuery = String((input as any)?.keywordQuery || '').trim();
+    const fromArray = Array.isArray(input?.keywords)
+      ? (input.keywords as any[])
+          .map((s) => String(s ?? '').toLowerCase().trim())
+          .filter((s) => s.length > 0)
+      : [];
+    if (fromArray.length) return fromArray;
+    const legacy = String(input?.keywordQuery || '').trim();
+    if (legacy) return splitKeywords(legacy);
+  } catch {}
+  return [];
+}
+
+export async function snapshotSearch(input: { keywords: string[]; vectorQuery: string; topK?: number }): Promise<string> {
+  try {
     const vectorQuery = String((input as any)?.vectorQuery || '').trim();
     const topKInput = Math.trunc(Number((input as any)?.topK));
+    const terms = normalizeKeywords(input as any);
+    const hasKeywordsArray = Array.isArray((input as any)?.keywords);
     
-    if (!keywordQuery || !vectorQuery) {
-      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: keywordQuery と vectorQuery は必須です' });
+    if (!vectorQuery || (!hasKeywordsArray && !String((input as any)?.keywordQuery || '').trim())) {
+      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: keywords と vectorQuery は必須です（keywordQuery は後方互換として解釈されます）' });
       return JSON.stringify(payload);
     }
 
@@ -42,8 +57,7 @@ export async function snapshotSearch(input: { keywordQuery: string; vectorQuery:
       return JSON.stringify(payload);
     }
 
-    // 2) キーワードAND検索で絞り込み
-    const terms = splitKeywords(keywordQuery);
+    // 2) キーワードAND検索で絞り込み（keywords 配列による厳密 AND 検索。未指定/空配列の場合は全件）
     const keywordFiltered: ChunkMetadata[] = terms.length
       ? allChunks.filter((chunk) => {
           const lc = chunk.chunk_text.toLowerCase();
@@ -55,10 +69,10 @@ export async function snapshotSearch(input: { keywordQuery: string; vectorQuery:
         })
       : allChunks;
     
-    console.info(`[snapshot_search] keyword(AND) terms=${JSON.stringify(terms)} matchedChunks=${keywordFiltered.length}/${allChunks.length}`);
+    console.info(`[snapshot_search] keywords(AND) terms=${JSON.stringify(terms)} matchedChunks=${keywordFiltered.length}/${allChunks.length}`);
 
     if (!keywordFiltered.length) {
-      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'キーワード検索で一致するチャンクが見つかりませんでした' });
+      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'キーワード検索で一致するチャンクが見つかりませんでした（keywordsを減らす/一般化するなど条件緩和を検討してください）' });
       return JSON.stringify(payload);
     }
 

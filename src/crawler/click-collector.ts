@@ -159,6 +159,7 @@ export async function clickPointerAndCollect(
       const changed = await urlWaiter;
 
       // イベントリスナーのクリーンアップとタブ処理
+      let hasOpenedNewTab = false;
       try {
         context.off('page', pageCreatedHandler);
         // クリック後、DOM 準備完了を明示待機（固定スリープ削減）
@@ -169,6 +170,7 @@ export async function clickPointerAndCollect(
         // 現在のページに戻らない場合でもタブを閉じる
         for (const newPage of newPagesOpened) {
           if (!newPage.isClosed()) {
+            hasOpenedNewTab = true;
             const newPageUrl = normalizeUrl(newPage.url());
             // 内部リンクの場合でも、現在のメインページではない新しいタブは閉じる
             if (newPage !== page) {
@@ -179,6 +181,12 @@ export async function clickPointerAndCollect(
         }
       } catch (cleanupErr) {
         try { console.warn(`[root=${rootUrl}] [level=${level}] error during tab cleanup: ${String((cleanupErr as any)?.message ?? cleanupErr)}`); } catch {}
+      }
+
+      // 新しいタブが開いた場合は、スナップショット処理をスキップして次の要素へ
+      if (hasOpenedNewTab) {
+        try { console.info(`[root=${rootUrl}] [level=${level}] new tab was opened; skipping snapshot and continuing to next element`); } catch {}
+        continue;
       }
 
       if (changed) {

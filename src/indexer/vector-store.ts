@@ -28,22 +28,31 @@ export class VectorStore {
       throw new Error('ベクトル数とチャンクID数が一致しません');
     }
 
-    // 全ベクトルを1次元Float32Arrayに連結
-    const totalElements = vectors.length * this.dimension;
-    const flatVectors = new Float32Array(totalElements);
-    
-    for (let i = 0; i < vectors.length; i++) {
-      const vector = vectors[i]!;
-      if (vector.length !== this.dimension) {
-        throw new Error(`ベクトル次元が一致しません: expected ${this.dimension}, got ${vector.length}`);
-      }
-      // ベクトルをflatVectorsにコピー
-      flatVectors.set(vector, i * this.dimension);
-      this.chunkIds.push(chunkIds[i]!);
-    }
+    // メモリ圧迫を避けるため、追加はチャンク分割して行う
+    const addChunkSizeEnv = String(process.env.INDEXER_FAISS_ADD_CHUNK || '').trim();
+    const ADD_CHUNK = Number.isFinite(Number(addChunkSizeEnv)) && Number(addChunkSizeEnv) > 0
+      ? Math.trunc(Number(addChunkSizeEnv))
+      : 256; // デフォルト: 256ベクトルずつ
 
-    // 1次元配列として一括追加（faiss-nodeは通常の配列を期待）
-    (this.index as any).add(Array.from(flatVectors));
+    for (let start = 0; start < vectors.length; start += ADD_CHUNK) {
+      const end = Math.min(start + ADD_CHUNK, vectors.length);
+      const batchCount = end - start;
+      // フラット化（number[]）。Float32ArrayにしてからArray.fromでもよいが、二重化を避けるため直接number[]にする
+      const flat: number[] = new Array(batchCount * this.dimension);
+      let cursor = 0;
+      for (let i = start; i < end; i++) {
+        const vector = vectors[i]!;
+        if (vector.length !== this.dimension) {
+          throw new Error(`ベクトル次元が一致しません: expected ${this.dimension}, got ${vector.length}`);
+        }
+        for (let d = 0; d < this.dimension; d++) {
+          flat[cursor++] = vector[d]!;
+        }
+        this.chunkIds.push(chunkIds[i]!);
+      }
+      // faiss-nodeは通常の配列(number[])を期待
+      (this.index as any).add(flat);
+    }
   }
 
   /**

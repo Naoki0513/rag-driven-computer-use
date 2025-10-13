@@ -37,7 +37,7 @@ export async function browserPress(input: PressInput): Promise<string> {
       await loc.press(key);
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
-      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+      try { top = query ? await rerankSnapshotTopChunks(snaps.text, query) : []; } catch {}
       const payload = await attachTodos({ ok: true, action: 'press', ref, key, snapshots: { top: top.map(({ text }) => ({ text })), url: snaps.url } });
       return JSON.stringify(payload);
     } catch (e: any) {
@@ -49,7 +49,7 @@ export async function browserPress(input: PressInput): Promise<string> {
       let payload: any = { ok: formatToolError(e), action: 'press', ref, key, query };
       if (snaps) {
         let top: Array<{ score: number; text: string }> = [];
-        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query, 3) : []; } catch {}
+        try { top = query ? await rerankSnapshotTopChunks(snaps.text, query) : []; } catch {}
         payload.snapshots = { top: top.map(({ text }) => ({ text })), url: snaps.url };
       }
       payload = await attachTodos(payload);

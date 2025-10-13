@@ -6,6 +6,11 @@ import { startSessionTrace } from './observability.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 type ModelCandidate = { modelId: string; region: string };
 
@@ -137,6 +142,29 @@ export async function runSingleQuery(query: string): Promise<void> {
   const sessionId = `agent-session-${Date.now()}`;
   startSessionTrace(sessionId, 'WebGraph Agent Session', { queryPreview: query.slice(0, 120) });
 
+  // WebArena評価の事前確認
+  const enableWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+  if (enableWebArenaEval) {
+    const configFilePath = String(process.env.AGENT_WEBARENA_CONFIG_FILE || '').trim();
+    if (!configFilePath) {
+      console.warn('[WebArena] 警告: AGENT_WEBARENA_EVAL=true ですが AGENT_WEBARENA_CONFIG_FILE が未設定です');
+    } else {
+      // 評価スクリプトの存在確認
+      const envEvalScript = String(process.env.AGENT_WEBARENA_EVAL_SCRIPT || '').trim();
+      const evalScript = envEvalScript
+        ? path.resolve(envEvalScript)
+        : path.resolve(__dirname, '..', '..', 'scripts', 'evaluate_webarena.py');
+      try {
+        await fs.access(evalScript);
+        console.log(`[WebArena] 評価スクリプト確認: ${evalScript} ✓`);
+      } catch (e: any) {
+        console.warn(`[WebArena] 警告: 評価スクリプトが見つかりません: ${evalScript}`);
+        console.warn('[WebArena] 評価は Trajectory 保存のみ実行されます');
+        console.warn('[ヒント] 評価スクリプトのパスを AGENT_WEBARENA_EVAL_SCRIPT 環境変数で指定できます');
+      }
+    }
+  }
+  
   // まず最初にブラウザを起動（以降の実行で共有・再利用）
   await ensureSharedBrowserStarted();
   
@@ -219,8 +247,8 @@ async function runWebArenaEvaluation(query: string, answer: string): Promise<voi
     
     const explicitTraj = String(process.env.AGENT_WEBARENA_TRAJECTORY_FILE || '').trim();
     const trajPath = explicitTraj
-      ? path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`)
-      : path.resolve(process.cwd(), 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
+      ? path.resolve(__dirname, '..', '..', 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`)
+      : path.resolve(__dirname, '..', '..', 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
     const evaluatedAt = new Date().toISOString();
     await saveWebArenaTrajectory(trajPath, cdpEndpoint, evaluatedAt);
     console.log(`[WebArena] Trajectory保存: ${trajPath}`);
@@ -231,11 +259,26 @@ async function runWebArenaEvaluation(query: string, answer: string): Promise<voi
       return;
     }
     
-    const evalScript = path.resolve(process.cwd(), 'scripts', 'evaluate_webarena.py');
+    // 評価スクリプトパス（環境変数で指定可能、デフォルトは相対パス）
+    const envEvalScript = String(process.env.AGENT_WEBARENA_EVAL_SCRIPT || '').trim();
+    const evalScript = envEvalScript
+      ? path.resolve(envEvalScript)
+      : path.resolve(__dirname, '..', '..', 'scripts', 'evaluate_webarena.py');
+    
+    // 評価スクリプトの存在確認
+    try {
+      await fs.access(evalScript);
+    } catch (e: any) {
+      console.log(`[WebArena] 評価スクリプトが見つかりません: ${evalScript}`);
+      console.log('[WebArena] 評価をスキップします（Trajectory は保存済み）');
+      console.log('[ヒント] 評価スクリプトのパスを AGENT_WEBARENA_EVAL_SCRIPT 環境変数で指定できます');
+      return;
+    }
+    
     const pyBin = String(process.env.AGENT_PYTHON_BIN || '').trim() || 'python3';
     console.log(`[WebArena] 評価実行: ${evalScript}`);
     
-    const resultPath = path.resolve(process.cwd(), 'output', 'webarena', 'results', `task_${taskId}_${timestamp}.json`);
+    const resultPath = path.resolve(__dirname, '..', '..', 'output', 'webarena', 'results', `task_${taskId}_${timestamp}.json`);
     
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(pyBin, [evalScript, trajPath, configFilePath, cdpEndpoint, resultPath], {
