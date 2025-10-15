@@ -61,6 +61,48 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
+          name: 'browser_hover',
+          description: '要素にホバーします。ref（必須）と query（必須）。ホバー後は query に基づきスナップショットをチャンク分割+リランクし上位Nチャンクを返却します。',
+          inputSchema: { json: { type: 'object', properties: { ref: { type: 'string' }, query: { type: 'string' } }, required: ['ref', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
+          name: 'browser_dragdrop',
+          description: 'ドラッグ&ドロップを実行します。sourceRef/targetRef（いずれも必須）と query（必須）。実行後は query に基づきスナップショットをリランクして返します。',
+          inputSchema: { json: { type: 'object', properties: { sourceRef: { type: 'string' }, targetRef: { type: 'string' }, query: { type: 'string' } }, required: ['sourceRef', 'targetRef', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
+          name: 'browser_dialog',
+          description: 'ページのダイアログをハンドリングします。action は accept/dismiss、promptText 任意、query（必須）。',
+          inputSchema: { json: { type: 'object', properties: { action: { type: 'string', enum: ['accept', 'dismiss'] }, promptText: { type: 'string' }, query: { type: 'string' } }, required: ['action', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
+          name: 'browser_select',
+          description: 'select 要素の選択肢を選びます。ref（必須）、values(string[]) または labels(string[]) のいずれか、query（必須）。',
+          inputSchema: { json: { type: 'object', properties: { ref: { type: 'string' }, values: { type: 'array', items: { type: 'string' } }, labels: { type: 'array', items: { type: 'string' } }, query: { type: 'string' } }, required: ['ref', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
+          name: 'browser_check',
+          description: 'チェックボックス/ラジオのチェック状態を変更します。ref（必須）、checked(boolean)、query（必須）。',
+          inputSchema: { json: { type: 'object', properties: { ref: { type: 'string' }, checked: { type: 'boolean' }, query: { type: 'string' } }, required: ['ref', 'checked', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
+          name: 'browser_evaluate',
+          description: 'ブラウザページ内で JavaScript を実行します。script（必須、文字列）、arg（任意）、query（必須）。実行後は query に基づきスナップショットをリランクして返却します。',
+          inputSchema: { json: { type: 'object', properties: { script: { type: 'string' }, arg: { }, query: { type: 'string' } }, required: ['script', 'query'] } }
+        }
+      },
+      {
+        toolSpec: {
           name: 'snapshot_search',
           description: 'インデックス化されたチャンクを使用した高度な検索を実行します。処理フロー: 1) Parquetファイルから事前分割済みチャンクを全件読み込み 2) keywords 配列（AND部分一致・小文字化して判定）でチャンクを絞り込み（例: {"keywords":["admin","orders","pending"]} は全語を含むチャンクのみ） 3) 絞り込まれたチャンクに対してベクトル検索を実行（topK×10件を取得、デフォルトは100件） 4) ベクトル検索結果をCohere Rerankで最終的にtopK件（デフォルトは10件）に絞り込み 5) 最終結果として {id,url,chunk} を返却。注意: AGENT_INDEX_NAMEとAGENT_INDEX_DIRの環境変数設定が必須です。キーワードが多すぎて0件の場合はキーワードを減らす/一般化するなど再試行してください。',
           inputSchema: {
@@ -96,13 +138,14 @@ export function buildToolConfig(): ToolConfiguration {
       {
         toolSpec: {
           name: 'browser_click',
-          description: '要素をクリックします。ref（必須）で要素を指定し、query（必須）でクリック後の確認内容を指定します。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバックします。クリック後は query に基づきスナップショットをチャンク分割+リランクし、上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K により指定）のみ返却します。',
+          description: '要素をクリック/ダブルクリックします。ref（必須）、query（必須）、double（任意: trueでダブルクリック）。refはaria-refで解決し、失敗時はスナップショットから推定します。実行後は query に基づき上位Nチャンクを返却します。',
           inputSchema: {
             json: {
               type: 'object',
               properties: {
                 ref: { type: 'string', description: 'スナップショット内の参照ID（例: e1, e2, f1e3 など）' },
-                query: { type: 'string', description: 'クリック後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
+                query: { type: 'string', description: 'クリック後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' },
+                double: { type: 'boolean', description: 'true の場合はダブルクリック' }
               },
               required: ['ref', 'query'],
             },

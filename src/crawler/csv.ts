@@ -66,34 +66,7 @@ export class CsvWriter {
     await this.writeSerialized(serialized);
   }
 
-  async appendUrlOnly(url: string): Promise<number> {
-    if (!this.stream) throw new Error('CSV writer not initialized');
-    return await this.withLock(async () => {
-      // 既存URLなら既存IDを返す（行は更新しない）
-      if (this.urlToIdMap.has(url)) {
-        return this.urlToIdMap.get(url)!;
-      }
-      // 新規IDを予約
-      const currentId = this.nextId;
-      this.nextId += 1;
-      this.urlToIdMap.set(url, currentId);
-      // プレースホルダ行を追記（フルリライトしない）
-      await this.appendRow([
-        url,
-        String(currentId),
-        '',
-        '',
-        '',
-      ]);
-      try { console.info(`[CSV] URL discovered (placeholder upserted) ID=${currentId} -> ${url}`); } catch {}
-      return currentId;
-    });
-  }
-
-  async appendNode(node: NodeState): Promise<void> {
-    if (!this.stream) throw new Error('CSV writer not initialized');
-    await this.appendNodeDedup(node);
-  }
+  // appendNode は未使用のため削除（appendNodeDedup を直接使用）
 
   // 重複排除＆再実行時上書き対応付きのフル行書込み
   async appendNodeDedup(
@@ -155,12 +128,18 @@ export class CsvWriter {
   }
 
   async close(): Promise<void> {
-    if (!this.stream) return;
+    if (!this.stream) {
+      // ストリームが既に閉じられている場合でも、念のためコンパクションを試みる
+      try { await this.compactOnClose(); } catch {}
+      return;
+    }
     const s = this.stream;
     this.stream = null;
     await new Promise<void>((resolve) => {
       s.end(resolve);
     });
+    // 追記完了後に一括コンパクション（URLごとに最新行のみ保持）
+    try { await this.compactOnClose(); } catch {}
   }
 
   private async writeLine(values: string[]): Promise<void> {
@@ -176,6 +155,82 @@ export class CsvWriter {
     if (!ok) {
       await new Promise<void>((resolve) => this.stream?.once('drain', () => resolve()));
     }
+  }
+
+  // 終了時の一括コンパクション
+  // - URL ごとに最新 timestamp の行を採用
+  // - 同一 timestamp の場合はフル行（site/snapshot/timestamp のいずれか有り）を優先
+  // - なお同点なら最後に出現した行を採用
+  private async compactOnClose(): Promise<void> {
+    const headerLine = this.headers.map((h) => serializeCsvField(h)).join(',');
+    let content = '';
+    try {
+      content = await fs.promises.readFile(this.filePath, 'utf8');
+    } catch {
+      return; // ファイル無し
+    }
+    const lines = content.split(/\r?\n/);
+    if (lines.length <= 1) return; // ヘッダのみ/空
+
+    // URL ごとの最良行を決定
+    type Pick = { fields: string[]; tsMs: number; isFull: boolean; index: number };
+    const bestByUrl = new Map<string, Pick>();
+
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i] || '';
+      if (!line.trim()) continue;
+      let fields: string[];
+      try { fields = parseCsvLine(line); } catch { continue; }
+      if (fields.length < 2) continue;
+      const url = fields[0] || '';
+      if (!url) continue;
+      const site = (fields[2] || '').trim();
+      const snap = (fields[3] || '').trim();
+      const ts = (fields[4] || '').trim();
+      const isFull = !!(site || snap || ts);
+      let tsMs = 0;
+      if (ts) {
+        const parsed = Date.parse(ts);
+        if (!Number.isNaN(parsed)) tsMs = parsed;
+      }
+
+      const prev = bestByUrl.get(url);
+      if (!prev) {
+        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
+        continue;
+      }
+
+      if (tsMs > prev.tsMs) {
+        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
+        continue;
+      }
+      if (tsMs < prev.tsMs) {
+        continue;
+      }
+      // timestamp が同一
+      if (isFull && !prev.isFull) {
+        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
+        continue;
+      }
+      if (!isFull && prev.isFull) {
+        continue;
+      }
+      // それでも同点なら最後に出現した方を採用
+      if (i >= prev.index) {
+        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
+      }
+    }
+
+    // 出力: ヘッダ + URLごとの最良行（出現順を概ね保つため index 昇順）
+    const picks = Array.from(bestByUrl.values()).sort((a, b) => a.index - b.index);
+    const out: string[] = [];
+    out.push(headerLine);
+    for (const p of picks) out.push(p.fields.map((v) => serializeCsvField(v)).join(','));
+
+    const tmpPath = `${this.filePath}.compact.tmp`;
+    await fs.promises.writeFile(tmpPath, out.join('\n') + '\n', 'utf8');
+    await fs.promises.rename(tmpPath, this.filePath);
+    try { console.info(`[CSV] compacted: unique URLs=${bestByUrl.size}`); } catch {}
   }
 
   // 以降は内部ユーティリティ
@@ -194,70 +249,7 @@ export class CsvWriter {
     }
   }
 
-  private isFullValues(values: string[]): boolean {
-    const site = (values[2] || '').trim();
-    const snap = (values[3] || '').trim();
-    const ts = (values[4] || '').trim();
-    return !!(site || snap || ts);
-  }
-
-  private async replaceOrAppendRow(newValues: string[], preferFull: boolean): Promise<void> {
-    // 一時的にストリームを閉じて安全に全体書き換え
-    if (this.stream) await this.close();
-    const tmpPath = `${this.filePath}.tmp`;
-
-    let content = '';
-    try {
-      content = await fs.promises.readFile(this.filePath, 'utf8');
-    } catch {}
-
-    const headerLine = this.headers.map((h) => serializeCsvField(h)).join(',');
-    const lines = content ? content.split(/\r?\n/) : [];
-    const out: string[] = [];
-    if (lines.length === 0 || (lines[0] || '') !== headerLine) {
-      out.push(headerLine);
-    } else {
-      out.push(lines[0]!);
-    }
-
-    const targetUrl = newValues[0] || '';
-    const newIsFull = this.isFullValues(newValues);
-    let found = false;
-
-    for (let i = 1; i < lines.length; i += 1) {
-      const line = lines[i] || '';
-      if (!line.trim()) continue;
-      let fields: string[];
-      try { fields = parseCsvLine(line); } catch { out.push(line); continue; }
-      if ((fields[0] || '') === targetUrl) {
-        found = true;
-        const oldIsFull = this.isFullValues(fields);
-        let keepValues: string[] = fields;
-        if (newIsFull && !oldIsFull) {
-          keepValues = newValues;
-        } else if (!newIsFull && oldIsFull) {
-          keepValues = fields; // ダウングレードしない
-        } else if (newIsFull && oldIsFull) {
-          keepValues = preferFull ? newValues : fields;
-        } else {
-          // 両方プレースホルダ：既存を保持
-          keepValues = fields;
-        }
-        out.push(keepValues.map((v) => serializeCsvField(v)).join(','));
-      } else {
-        out.push(line);
-      }
-    }
-
-    if (!found) {
-      out.push(newValues.map((v) => serializeCsvField(v)).join(','));
-    }
-
-    await fs.promises.writeFile(tmpPath, out.join('\n') + '\n', 'utf8');
-    await fs.promises.rename(tmpPath, this.filePath);
-    // 追記用ストリームを再オープン
-    this.stream = fs.createWriteStream(this.filePath, { flags: 'a', encoding: 'utf8' });
-  }
+  // isFullValues / replaceOrAppendRow は未使用のため削除
 }
 
 function serializeCsvField(value: string | number | null | undefined): string {

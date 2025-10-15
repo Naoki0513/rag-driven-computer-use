@@ -11,7 +11,7 @@ import type { NodeState } from '../utilities/types.js';
 // グローバル: 実行全体で共有するクリック要素シグネチャ集合（role|name）
 const GLOBAL_CLICK_ELEM_SIGS = new Set<string>();
 export function getGlobalClickElemSigs(): Set<string> { return GLOBAL_CLICK_ELEM_SIGS; }
-export function clearGlobalClickElemSigs(): void { GLOBAL_CLICK_ELEM_SIGS.clear(); }
+// clearGlobalClickElemSigs は未使用のため削除
 
 export function extractClickableElementSigs(snapshotText: string): Set<string> {
   const sigs = new Set<string>();
@@ -129,8 +129,11 @@ export async function clickPointerAndCollect(
       // 新しいタブ/ページが開かれた場合の監視と自動クローズ（外部リンクの場合）
       const context = page.context();
       const newPagesOpened: Page[] = [];
+      // たとえ即時に閉じられたとしても、新規タブが「開かれた」事実を検知するためのフラグ
+      let openedAnyNewTab = false;
       const pageCreatedHandler = async (newPage: Page) => {
         newPagesOpened.push(newPage);
+        openedAnyNewTab = true;
         try {
           // 新しいページの読み込みを少し待つ
           await newPage.waitForLoadState('domcontentloaded', { timeout: t }).catch(() => {});
@@ -184,7 +187,7 @@ export async function clickPointerAndCollect(
       }
 
       // 新しいタブが開いた場合は、スナップショット処理をスキップして次の要素へ
-      if (hasOpenedNewTab) {
+      if (hasOpenedNewTab || openedAnyNewTab) {
         try { console.info(`[root=${rootUrl}] [level=${level}] new tab was opened; skipping snapshot and continuing to next element`); } catch {}
         continue;
       }

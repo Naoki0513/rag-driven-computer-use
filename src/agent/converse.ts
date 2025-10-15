@@ -14,6 +14,12 @@ import { browserSnapshot } from './tools/browser-snapshot.js';
 import { todoTool } from './tools/todo.js';
 import { snapshotSearch } from './tools/snapshot-search.js';
 import { snapshotFetch } from './tools/snapshot-fetch.js';
+import { browserHover } from './tools/browser-hover.js';
+import { browserDragAndDrop } from './tools/browser-dragdrop.js';
+import { browserHandleDialog } from './tools/browser-dialog.js';
+import { browserSelect } from './tools/browser-select.js';
+import { browserCheck } from './tools/browser-check.js';
+import { browserEvaluateScript } from './tools/browser-evaluate.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
@@ -395,7 +401,8 @@ export async function converseLoop(
             console.log(`Calling tool: browser_click ${JSON.stringify(inp)}`);
             const payload: any = { 
               ref: String(inp.ref ?? '').trim(), 
-              query: String(inp.query ?? '') 
+              query: String(inp.query ?? ''),
+              double: (inp.double === true) || String(inp.double ?? '').toLowerCase() === 'true'
             };
             const result = await browserClick(payload);
             console.log(`Tool result (browser_click): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
@@ -425,6 +432,62 @@ export async function converseLoop(
             };
             const result = await browserPress(payload);
             console.log(`Tool result (browser_press): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_hover') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_hover ${JSON.stringify(inp)}`);
+            const payload: any = { ref: String(inp.ref ?? '').trim(), query: String(inp.query ?? '') };
+            const result = await browserHover(payload);
+            console.log(`Tool result (browser_hover): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_dragdrop') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_dragdrop ${JSON.stringify(inp)}`);
+            const payload: any = { sourceRef: String(inp.sourceRef ?? '').trim(), targetRef: String(inp.targetRef ?? '').trim(), query: String(inp.query ?? '') };
+            const result = await browserDragAndDrop(payload);
+            console.log(`Tool result (browser_dragdrop): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_dialog') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_dialog ${JSON.stringify(inp)}`);
+            const payload: any = { action: String(inp.action ?? 'dismiss'), promptText: String(inp.promptText ?? ''), query: String(inp.query ?? '') };
+            const result = await browserHandleDialog(payload);
+            console.log(`Tool result (browser_dialog): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_select') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_select ${JSON.stringify(inp)}`);
+            const payload: any = { ref: String(inp.ref ?? '').trim(), values: Array.isArray(inp.values) ? inp.values : undefined, labels: Array.isArray(inp.labels) ? inp.labels : undefined, query: String(inp.query ?? '') };
+            const result = await browserSelect(payload);
+            console.log(`Tool result (browser_select): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_check') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_check ${JSON.stringify(inp)}`);
+            const payload: any = { ref: String(inp.ref ?? '').trim(), checked: (inp.checked === true) || String(inp.checked ?? '').toLowerCase() === 'true', query: String(inp.query ?? '') };
+            const result = await browserCheck(payload);
+            console.log(`Tool result (browser_check): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_evaluate') {
+          const inp = (toolUse as any).input ?? {};
+          // evaluate は I/O待ちやCPU主体でブラウザのDOM状態を壊しにくいが、ここでは順序維持のため browserTasks で処理
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            const preview = (() => { try { const s = JSON.stringify(inp); return s.length > 500 ? s.slice(0,500)+'...' : s; } catch { return String(inp); } })();
+            console.log(`Calling tool: browser_evaluate ${preview}`);
+            const payload: any = { script: String(inp.script ?? ''), arg: (inp as any).arg, query: String(inp.query ?? '') };
+            const result = await browserEvaluateScript(payload);
+            console.log(`Tool result (browser_evaluate): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         }

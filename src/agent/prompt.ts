@@ -26,7 +26,7 @@ ${schemaSection}
 - フェーズ2 EXECUTE
   1) 遷移: browser_goto で目的ページへ移動する（この時点では明示ログインを行わない）。
      認証が必要な場合はエージェントが自動で検知し、環境変数の資格情報＋保存済みstorageStateで補填・更新する。
-  2) 画面操作: browser_click / browser_input / browser_press / browser_snapshot を必要最小限で使用（browser_click/input/press は必ず ref もしくは role+name と query を指定）。
+  2) 画面操作: browser_click / browser_input / browser_press / browser_hover / browser_dragdrop / browser_select / browser_check / browser_dialog / browser_evaluate / browser_snapshot を必要最小限で使用（各ツールは基本 ref（または専用引数）と query を指定）。
      必要時のみ自動で認証が実行される（browser_loginツールは通常使用しない）。
   3) ToDo 反映: 成功に応じて todo の setDone / editTask
   4) 失敗・不確実時は PLAN に戻って再計画。繰り返しても不可なら「当該ドメインでは実行不可」と返す。
@@ -36,7 +36,13 @@ ${schemaSection}
 - snapshot_fetch: snapshot_searchで取得したURLまたはIDを指定して、CSVから該当ページのsnapshotforaiの完全なテキストを取得。チャンクでは不足する場合に使用
 - todo: ToDo を追加/完了/編集。常に todo.md の現在内容を返す
 - browser_goto: URL 遷移または id→URL 解決して遷移。必要時のみ自動で認証（環境変数の資格情報＋storageState補填）を行う。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
-- browser_click: ref（必須）と query（必須）を受け取り、refから要素を解決してクリック。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
+- browser_click: ref（必須）と query（必須）を受け取り、クリックを実行。double=true でダブルクリック。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
+- browser_hover: ref（必須）, query（必須）で要素にホバー
+- browser_dragdrop: sourceRef, targetRef（いずれも必須）, query（必須）でドラッグ&ドロップ
+- browser_select: ref（必須）、values(string[]) もしくは labels(string[]), query（必須）で select を選択
+- browser_check: ref（必須）、checked(boolean)、query（必須）でチェックボックス/ラジオを設定
+- browser_dialog: action=accept|dismiss, promptText（任意）, query（必須）でダイアログ操作
+- browser_evaluate: script（必須のJS文字列）, arg（任意）, query（必須）でブラウザ内 JS 実行
 - browser_input: ref（必須）、text（必須）、query（必須）を受け取り、refから要素を解決して入力。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
 - browser_press: ref（必須）、key（必須）、query（必須）を受け取り、refから要素を解決して送信。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
   

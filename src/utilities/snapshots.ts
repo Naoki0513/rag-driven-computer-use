@@ -50,13 +50,32 @@ export async function getSnapshotForAI(page: Page): Promise<string> {
     const text = await pw._snapshotForAI();
     if (typeof text === 'string' && text.trim().length > 0) return text;
   }
-  // フォールバック: DOM からクリック可能要素の概要を抽出
+  // フォールバック: DOM から主要な操作要素の概要を抽出（クリック系+フォーム要素）
   const fallback = await page.evaluate(() => {
     function getAccessibleName(el: Element): string {
       const aria = (el.getAttribute('aria-label') || '').trim();
       if (aria) return aria;
       const title = (el.getAttribute('title') || '').trim();
       if (title) return title;
+      // label 要素の関連付け
+      try {
+        const id = (el as HTMLElement).id;
+        if (id) {
+          const byFor = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+          if (byFor) {
+            const t = (byFor.textContent || '').replace(/\s+/g, ' ').trim();
+            if (t) return t;
+          }
+        }
+      } catch {}
+      // 祖先 label
+      try {
+        const label = el.closest('label');
+        if (label) {
+          const t = (label.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t) return t;
+        }
+      } catch {}
       const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
       return text || '';
     }
@@ -66,16 +85,41 @@ export async function getSnapshotForAI(page: Page): Promise<string> {
       const tag = el.tagName.toLowerCase();
       if (tag === 'a' && (el as HTMLAnchorElement).hasAttribute('href')) return 'link';
       if (tag === 'button') return 'button';
-      return 'button';
+      if (tag === 'input') {
+        const type = ((el as HTMLInputElement).type || '').toLowerCase();
+        if (type === 'checkbox') return 'checkbox';
+        if (type === 'radio') return 'radio';
+        if (type === 'submit' || type === 'button') return 'button';
+        return 'textbox';
+      }
+      if (tag === 'select') return 'combobox';
+      if (tag === 'textarea') return 'textbox';
+      return 'generic';
     }
-    const elements = Array.from(document.querySelectorAll('a[href], button, [role="button"], [role="tab"], [role="menuitem"], [role="link"], [role="treeitem"], [role="disclosure"]'));
+    const elements = Array.from(document.querySelectorAll(
+      [
+        'a[href]',
+        'button',
+        '[role="button"]',
+        '[role="tab"]',
+        '[role="menuitem"]',
+        '[role="link"]',
+        '[role="treeitem"]',
+        '[role="disclosure"]',
+        'input',
+        'select',
+        'textarea',
+        'label'
+      ].join(', ')
+    ));
     const lines: string[] = [];
     let idx = 0;
     for (const el of elements) {
       const role = roleOf(el);
       const name = getAccessibleName(el) || `${role}#${idx+1}`;
       const ref = `ref-${idx+1}`;
-      lines.push(`- ${role} "${name}" [cursor=pointer] [ref=${ref}]`);
+      const pointer = role === 'textbox' || role === 'combobox' || role === 'checkbox' || role === 'radio' ? 'input' : 'pointer';
+      lines.push(`- ${role} "${name}" [cursor=${pointer}] [ref=${ref}]`);
       const href = (el as HTMLAnchorElement).getAttribute('href');
       if (href) {
         lines.push(`  href: ${href}`);
