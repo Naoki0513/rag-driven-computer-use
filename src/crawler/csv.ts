@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import readline from 'node:readline';
 import path from 'node:path';
 import type { NodeState } from '../utilities/types.js';
 import { computeSha256Hex } from '../utilities/text.js';
@@ -163,72 +164,84 @@ export class CsvWriter {
   // - なお同点なら最後に出現した行を採用
   private async compactOnClose(): Promise<void> {
     const headerLine = this.headers.map((h) => serializeCsvField(h)).join(',');
-    let content = '';
+    if (!fs.existsSync(this.filePath)) return;
+
+    // 第1パス: URLごとの最良行の行インデックスだけ決める
+    type PickMeta = { tsMs: number; isFull: boolean; index: number };
+    const bestByUrl = new Map<string, PickMeta>();
     try {
-      content = await fs.promises.readFile(this.filePath, 'utf8');
+      const rs1 = fs.createReadStream(this.filePath, { encoding: 'utf8' });
+      const rl1 = readline.createInterface({ input: rs1, crlfDelay: Infinity });
+      let idx = 0;
+      for await (const line of rl1 as any) {
+        if (idx === 0) { idx += 1; continue; }
+        const trimmed = (line ?? '').trim();
+        if (!trimmed) { idx += 1; continue; }
+        let fields: string[];
+        try { fields = parseCsvLine(trimmed); } catch { idx += 1; continue; }
+        if (fields.length < 2) { idx += 1; continue; }
+        const url = fields[0] || '';
+        if (!url) { idx += 1; continue; }
+        const site = (fields[2] || '').trim();
+        const snap = (fields[3] || '').trim();
+        const ts = (fields[4] || '').trim();
+        const isFull = !!(site || snap || ts);
+        let tsMs = 0;
+        if (ts) {
+          const parsed = Date.parse(ts);
+          if (!Number.isNaN(parsed)) tsMs = parsed;
+        }
+        const prev = bestByUrl.get(url);
+        if (!prev) {
+          bestByUrl.set(url, { tsMs, isFull, index: idx });
+          idx += 1; continue;
+        }
+        if (tsMs > prev.tsMs) {
+          bestByUrl.set(url, { tsMs, isFull, index: idx });
+          idx += 1; continue;
+        }
+        if (tsMs < prev.tsMs) { idx += 1; continue; }
+        if (isFull && !prev.isFull) {
+          bestByUrl.set(url, { tsMs, isFull, index: idx });
+          idx += 1; continue;
+        }
+        if (!isFull && prev.isFull) { idx += 1; continue; }
+        if (idx >= prev.index) {
+          bestByUrl.set(url, { tsMs, isFull, index: idx });
+        }
+        idx += 1;
+      }
     } catch {
-      return; // ファイル無し
-    }
-    const lines = content.split(/\r?\n/);
-    if (lines.length <= 1) return; // ヘッダのみ/空
-
-    // URL ごとの最良行を決定
-    type Pick = { fields: string[]; tsMs: number; isFull: boolean; index: number };
-    const bestByUrl = new Map<string, Pick>();
-
-    for (let i = 1; i < lines.length; i += 1) {
-      const line = lines[i] || '';
-      if (!line.trim()) continue;
-      let fields: string[];
-      try { fields = parseCsvLine(line); } catch { continue; }
-      if (fields.length < 2) continue;
-      const url = fields[0] || '';
-      if (!url) continue;
-      const site = (fields[2] || '').trim();
-      const snap = (fields[3] || '').trim();
-      const ts = (fields[4] || '').trim();
-      const isFull = !!(site || snap || ts);
-      let tsMs = 0;
-      if (ts) {
-        const parsed = Date.parse(ts);
-        if (!Number.isNaN(parsed)) tsMs = parsed;
-      }
-
-      const prev = bestByUrl.get(url);
-      if (!prev) {
-        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
-        continue;
-      }
-
-      if (tsMs > prev.tsMs) {
-        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
-        continue;
-      }
-      if (tsMs < prev.tsMs) {
-        continue;
-      }
-      // timestamp が同一
-      if (isFull && !prev.isFull) {
-        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
-        continue;
-      }
-      if (!isFull && prev.isFull) {
-        continue;
-      }
-      // それでも同点なら最後に出現した方を採用
-      if (i >= prev.index) {
-        bestByUrl.set(url, { fields, tsMs, isFull, index: i });
-      }
+      return;
     }
 
-    // 出力: ヘッダ + URLごとの最良行（出現順を概ね保つため index 昇順）
-    const picks = Array.from(bestByUrl.values()).sort((a, b) => a.index - b.index);
-    const out: string[] = [];
-    out.push(headerLine);
-    for (const p of picks) out.push(p.fields.map((v) => serializeCsvField(v)).join(','));
+    const chosenIndexes = new Set<number>(Array.from(bestByUrl.values()).sort((a, b) => a.index - b.index).map(v => v.index));
 
+    // 第2パス: 選ばれた行のみを書き出す
     const tmpPath = `${this.filePath}.compact.tmp`;
-    await fs.promises.writeFile(tmpPath, out.join('\n') + '\n', 'utf8');
+    const ws = fs.createWriteStream(tmpPath, { encoding: 'utf8' });
+    await new Promise<void>((resolve, reject) => {
+      ws.write(headerLine + '\n', 'utf8', (err) => err ? reject(err) : resolve());
+    });
+    try {
+      const rs2 = fs.createReadStream(this.filePath, { encoding: 'utf8' });
+      const rl2 = readline.createInterface({ input: rs2, crlfDelay: Infinity });
+      let idx2 = 0;
+      for await (const line of rl2 as any) {
+        if (idx2 === 0) { idx2 += 1; continue; }
+        if (chosenIndexes.has(idx2)) {
+          await new Promise<void>((resolve) => {
+            ws.write((line ?? '') + '\n', 'utf8', () => resolve());
+          });
+        }
+        idx2 += 1;
+      }
+    } catch {
+      try { ws.end(); } catch {}
+      try { await fs.promises.unlink(tmpPath); } catch {}
+      return;
+    }
+    await new Promise<void>((resolve) => ws.end(() => resolve()));
     await fs.promises.rename(tmpPath, this.filePath);
     try { console.info(`[CSV] compacted: unique URLs=${bestByUrl.size}`); } catch {}
   }
@@ -270,74 +283,57 @@ async function loadExistingCsvData(filePath: string): Promise<{ maxId: number; u
     snapshotHashSet: new Set<string>(),
   };
 
-  try {
-    const content = await fs.promises.readFile(filePath, 'utf8');
-    const lines = content.split(/\r?\n/);
-    
-    // 末尾の空行を除去
-    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-    
-    if (lines.length <= 1) return result; // ヘッダのみまたは空ファイル
-    
-    // データ行を解析（ヘッダ行をスキップ）
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      
-      try {
-        // 簡易CSVパーサー（ダブルクォートで囲まれた値を考慮）
-        const fields = parseCsvLine(line);
-        if (fields.length >= 2) {
-          const url = fields[0] || '';
-          const idStr = fields[1] || '';
-          const site = fields[2] || '';
-          const snapshotForAIField = fields[3] || '';
-          const timestamp = fields[4] || '';
-          const id = parseInt(idStr, 10);
-          
-          if (url && !isNaN(id)) {
-            // URLとIDのマッピングを記録（最初に見つかったもののみ）
-            if (!result.urlToIdMap.has(url)) {
-              result.urlToIdMap.set(url, id);
-            }
-            // 最大IDを更新
-            if (id > result.maxId) {
-              result.maxId = id;
-            }
-            // フルデータ行の検出（site、snapshotForAI、timestampのいずれかが存在する場合）
-            if (fields.length >= 5 && (site.trim() || (snapshotForAIField || '').trim() || timestamp.trim())) {
-              result.fullDataUrls.add(url);
-            }
+  if (!fs.existsSync(filePath)) return result;
 
-            // スナップショット文字列からハッシュを復元
-            try {
-              let snapshotText = '';
-              const raw = snapshotForAIField;
-              if (raw && raw.trim().length > 0) {
-                try {
-                  // 既存は JSON.stringify で格納されている想定
-                  snapshotText = JSON.parse(raw);
-                  if (typeof snapshotText !== 'string') snapshotText = String(snapshotText ?? '');
-                } catch {
-                  // 非JSON格納の互換（安全側）
-                  snapshotText = raw;
-                }
-              }
-              const hash = computeSha256Hex(snapshotText);
-              if (snapshotText && hash) {
-                result.snapshotHashByUrl.set(url, hash);
-                result.snapshotHashSet.add(hash);
-              }
-            } catch {}
-          }
+  try {
+    const rs = fs.createReadStream(filePath, { encoding: 'utf8' });
+    const rl = readline.createInterface({ input: rs, crlfDelay: Infinity });
+    let lineIndex = 0;
+    for await (const line of rl as any) {
+      if (lineIndex === 0) { lineIndex += 1; continue; }
+      lineIndex += 1;
+      const trimmed = (line ?? '').trim();
+      if (!trimmed) continue;
+      try {
+        const fields = parseCsvLine(trimmed);
+        if (fields.length < 2) continue;
+        const url = fields[0] || '';
+        const idStr = fields[1] || '';
+        const site = (fields[2] || '').trim();
+        const snapshotForAIField = fields[3] || '';
+        const timestamp = (fields[4] || '').trim();
+        const id = parseInt(idStr, 10);
+        if (!url || Number.isNaN(id)) continue;
+
+        if (!result.urlToIdMap.has(url)) result.urlToIdMap.set(url, id);
+        if (id > result.maxId) result.maxId = id;
+        if (fields.length >= 5 && (site || (snapshotForAIField || '').trim() || timestamp)) {
+          result.fullDataUrls.add(url);
         }
-      } catch (parseErr) {
-        // パース失敗した行は無視
-        continue;
-      }
+
+        // スナップショット本文は保持せず、ハッシュのみ復元
+        try {
+          let snapshotText = '';
+          const raw = snapshotForAIField;
+          if (raw && raw.trim().length > 0) {
+            try {
+              const parsed = JSON.parse(raw);
+              snapshotText = typeof parsed === 'string' ? parsed : String(parsed ?? '');
+            } catch {
+              snapshotText = raw;
+            }
+          }
+          if (snapshotText) {
+            const hash = computeSha256Hex(snapshotText);
+            if (hash) {
+              result.snapshotHashByUrl.set(url, hash);
+              result.snapshotHashSet.add(hash);
+            }
+          }
+        } catch {}
+      } catch {}
     }
-    
-    result.dataRowCount = lines.length - 1; // ヘッダ行を除いたデータ行数
+    result.dataRowCount = Math.max(0, lineIndex - 1);
     return result;
   } catch {
     return result;

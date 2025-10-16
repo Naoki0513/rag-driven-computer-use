@@ -17,16 +17,18 @@ export async function browserEvaluateScript(input: EvaluateInput): Promise<strin
 
       // 可能な限り安全に evaluate し、戻り値は JSON.stringify 可能な範囲に収める
       const result = arg !== undefined
-        ? await page.evaluate((code: string, a: any) => {
+        ? await page.evaluate((args: any[]) => {
+            const [code, a] = args;
             // eslint-disable-next-line no-new-func
             const fn = new Function('arg', `return (async () => { ${code}\n})();`);
             return Promise.resolve(fn(a)).then((r) => r);
-          }, [script, arg] as const)  // 配列で引数を渡す
-        : await page.evaluate((code: string) => {
+          }, [script, arg])
+        : await page.evaluate((args: any[]) => {
+            const [code] = args;
             // eslint-disable-next-line no-new-func
             const fn = new Function('', `return (async () => { ${code}\n})();`);
             return Promise.resolve(fn()).then((r) => r);
-          }, script);
+          }, [script]);
 
       const snaps = await captureAndStoreSnapshot(page);
       let top: Array<{ score: number; text: string }> = [];
