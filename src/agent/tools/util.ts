@@ -12,6 +12,8 @@ import { recordRerankCallStart, recordRerankCallSuccess, recordRerankCallError, 
 let sharedBrowser: Browser | null = null;
 let sharedContext: BrowserContext | null = null;
 let sharedPage: Page | null = null;
+let recordedVideoDir: string | null = null;
+let pendingVideoTargetPath: string | null = null;
 
 export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
   if (sharedBrowser && sharedContext && sharedPage) {
@@ -63,6 +65,18 @@ export async function ensureSharedBrowserStarted(): Promise<{ browser: Browser; 
     }
   }
   
+  // ===== 動画録画設定 =====
+  try {
+    const videoDirEnv = String(process.env.AGENT_VIDEO_DIR || '').trim();
+    const defaultDir = path.resolve(process.cwd(), 'output', 'webarena', 'videos', 'tmp');
+    recordedVideoDir = videoDirEnv ? path.resolve(videoDirEnv) : defaultDir;
+    await fs.mkdir(recordedVideoDir, { recursive: true }).catch(()=>{});
+    (contextOptions as any).recordVideo = { dir: recordedVideoDir, size: { width: 1280, height: 720 } };
+    console.log(`[Playwright] 録画を有効化: dir=${recordedVideoDir}`);
+  } catch (e: any) {
+    console.log(`[警告] 録画ディレクトリ初期化に失敗: ${String(e?.message ?? e)}`);
+  }
+
   sharedContext = await sharedBrowser.newContext(contextOptions);
   const t = getTimeoutMs('agent');
   try { (sharedContext as any).setDefaultTimeout?.(t); } catch {}
@@ -83,6 +97,36 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
       console.log(`ブラウザを ${ms}ms 後にクローズします...`);
       await new Promise((r) => setTimeout(r, ms));
       await sharedBrowser.close();
+      // 録画ファイルの最終保存
+      try {
+        if (recordedVideoDir && pendingVideoTargetPath) {
+          const dirents = (await fs.readdir(recordedVideoDir, { withFileTypes: true })).filter((d) => d.isFile() && d.name.toLowerCase().endsWith('.webm'));
+          let latestPath: string | null = null;
+          let latestMtime = 0;
+          for (const d of dirents) {
+            const p = path.resolve(recordedVideoDir, d.name);
+            try {
+              const st = await fs.stat(p);
+              const mt = st.mtimeMs || st.mtime.getTime();
+              if (mt > latestMtime) { latestMtime = mt; latestPath = p; }
+            } catch {}
+          }
+          if (latestPath) {
+            try { await fs.mkdir(path.dirname(pendingVideoTargetPath), { recursive: true }); } catch {}
+            try {
+              await fs.rename(latestPath, pendingVideoTargetPath);
+              console.log(`[Video] 保存しました: ${pendingVideoTargetPath}`);
+            } catch (e: any) {
+              console.log(`[Video] 移動に失敗したためコピーを試みます: ${String(e?.message ?? e)}`);
+              try { await fs.copyFile(latestPath, pendingVideoTargetPath); console.log(`[Video] コピーで保存しました: ${pendingVideoTargetPath}`); } catch {}
+            }
+          } else {
+            console.log('[Video] 録画ファイル(.webm)が見つかりませんでした');
+          }
+        }
+      } catch (e: any) {
+        console.log(`[Video] 保存処理中に例外: ${String(e?.message ?? e)}`);
+      }
       console.log('ブラウザをクローズしました');
     } catch (e: any) {
       console.log(`ブラウザクローズ時エラー: ${String(e?.message ?? e)}`);
@@ -96,6 +140,7 @@ export async function closeSharedBrowserWithDelay(delayMs?: number): Promise<voi
         await fs.unlink(filePath).catch(() => {});
         console.log('ToDo ファイル(todo.md)を削除しました');
       } catch {}
+      pendingVideoTargetPath = null;
     }
   }
 }
@@ -575,6 +620,24 @@ export async function saveWebArenaTrajectory(outPath: string, cdpEndpoint: strin
     JSON.stringify({ trajectory: _webArenaTrajectory, cdp_endpoint: cdpEndpoint, final_url: finalUrl, evaluated_at: evaluatedAt || new Date().toISOString() }, null, 2),
     'utf-8'
   );
+
+  // 動画の最終配置先を evaluation-result 配下に直接設定
+  try {
+    const baseName = path.basename(absPath); // task_4_2025-10-16T19-41-07.json
+    const m = /^task_(\d+)_(.+)\.json$/i.exec(baseName);
+    if (m) {
+      const taskId = m[1]!;
+      const stamp = m[2]!; // 2025-10-16T19-41-07
+      const evalDir = path.resolve('/home/ec2-user/webarena-local/evaluation-result', `task_${taskId}`);
+      pendingVideoTargetPath = path.join(evalDir, `${stamp}.webm`);
+      try { await fs.mkdir(evalDir, { recursive: true }); } catch {}
+      console.log(`[Video] 目標パスを設定しました: ${pendingVideoTargetPath}`);
+    } else {
+      console.log(`[Video] 警告: ファイル名からタスクIDを抽出できませんでした: ${baseName}`);
+    }
+  } catch (e: any) {
+    console.log(`[Video] 警告: 動画パス設定に失敗: ${String(e?.message ?? e)}`);
+  }
 }
 
 export function getWebArenaTrajectory(): WebArenaTrajectory {

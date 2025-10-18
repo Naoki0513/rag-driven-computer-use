@@ -20,6 +20,7 @@ import { browserHandleDialog } from './tools/browser-dialog.js';
 import { browserSelect } from './tools/browser-select.js';
 import { browserCheck } from './tools/browser-check.js';
 import { browserEvaluateScript } from './tools/browser-evaluate.js';
+import { memoryTool } from './tools/memory.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
@@ -33,6 +34,18 @@ function supportsThinking(modelId: string): boolean {
   return id.includes('anthropic.claude-sonnet-4-20250514')
     || id.includes('anthropic.claude-opus-4-20250514')
     || id.includes('anthropic.claude-3-7-sonnet-20250219');
+}
+
+function supportsContextManagement(modelId: string): boolean {
+  const id = String(modelId || '').toLowerCase();
+  // Context management is supported on Claude 4.5 Sonnet/Haiku/Opus, Claude 3.7 Sonnet, Claude 4 Sonnet/Opus
+  return id.includes('anthropic.claude-sonnet-4-20250514')
+    || id.includes('anthropic.claude-opus-4-20250514')
+    || id.includes('anthropic.claude-3-7-sonnet-20250219')
+    || id.includes('anthropic.claude-haiku-4-20250514')
+    || id.includes('anthropic.claude-sonnet-4-5')
+    || id.includes('anthropic.claude-haiku-4-5')
+    || id.includes('anthropic.claude-opus-4');
 }
 
 // （未使用のリージョンスロットリング補助関数群を削除し、簡素化）
@@ -128,6 +141,12 @@ export async function converseLoop(
         if (lowerId.includes('anthropic.claude-3-7-sonnet-20250219')) {
           betaTags.push('token-efficient-tools-2025-02-19');
         }
+        
+        // Context Management ベータヘッダ追加（対応モデルの場合）
+        if (supportsContextManagement(modelId)) {
+          betaTags.push('context-management-2025-06-27');
+        }
+        
         // ===== Thinking (Extended / Interleaved) 構成 =====
         const envThinkingEnabled = String(process.env.AGENT_THINKING_ENABLED ?? '').toLowerCase() === 'true';
         const envInterleaved = String(process.env.AGENT_THINKING_INTERLEAVED ?? '').toLowerCase() === 'true';
@@ -157,13 +176,38 @@ export async function converseLoop(
 
         try { console.log(`[Debug] toolChoice: ${JSON.stringify((toolConfig as any)?.toolChoice)}`); } catch {}
 
+        // Context Management 設定（対応モデルの場合）
+        const contextManagementConfig: any = {};
+        if (supportsContextManagement(modelId)) {
+          const triggerValue = Number(process.env.AGENT_CONTEXT_CLEAR_TRIGGER ?? 50);
+          const trigger = Number.isFinite(triggerValue) && triggerValue > 0 ? Math.trunc(triggerValue) : 50;
+          
+          contextManagementConfig.context_management = {
+            edits: [
+              {
+                type: 'clear_tool_uses_20250919',
+                trigger: {
+                  type: 'tool_uses',
+                  value: trigger
+                },
+                keep: {
+                  type: 'tool_uses',
+                  value: 3
+                }
+              }
+            ]
+          };
+          
+          console.log(`[Context Management] enabled: trigger=${trigger} tool_uses, keep=3`);
+        }
+
         const cmd = new ConverseCommand({
           modelId,
           system,
           toolConfig,
           messages: currentMessages as any,
           inferenceConfig,
-          additionalModelRequestFields,
+          additionalModelRequestFields: { ...additionalModelRequestFields, ...contextManagementConfig },
         });
         if (Object.keys(additionalModelRequestFields).length) {
           console.log(`[Debug] additionalModelRequestFields: ${JSON.stringify(additionalModelRequestFields)}`);
@@ -351,6 +395,14 @@ export async function converseLoop(
             console.log(`Calling tool: todo with input: ${JSON.stringify(input)}`);
             const result = await todoTool(input as any);
             console.log(`Tool result (todo): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'memory') {
+          const input = (toolUse as any).input ?? {};
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: memory with input: ${JSON.stringify(input)}`);
+            const result = await memoryTool(input as any);
+            console.log(`Tool result (memory): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
         } else if (name === 'browser_snapshot') {

@@ -92,7 +92,7 @@ def _capture_screenshot_base64(page: Any) -> str:
         return _default_placeholder_png_base64()
 
 
-def _build_render_html(task_id: int, states: List[dict], actions: List[dict], image_b64: str) -> str:
+def _build_render_html(task_id: int, states: List[dict], actions: List[dict]) -> str:
     # Ensure same length
     n = min(len(states), len(actions))
     parts: List[str] = []
@@ -115,7 +115,6 @@ def _build_render_html(task_id: int, states: List[dict], actions: List[dict], im
         parts.append('<div class="state_obv"><pre>')
         parts.append(html.escape(obv))
         parts.append('</pre></div>')
-        parts.append(f'<img src="data:image/png;base64,{image_b64}" alt="screenshot_{i}">')
         parts.append(f'<div class="raw_parsed_prediction">{html.escape(raw)}</div>')
         parts.append(f'<div class="parsed_action">{html.escape(parsed)}</div>')
         parts.append('<hr>')
@@ -214,6 +213,7 @@ def _save_leaderboard_style_summary(
     config_obj: dict,
     trajectory_file: str,
     run_result_folder: str,
+    video_file: str,
 ) -> Path:
     summary_dir.mkdir(parents=True, exist_ok=True)
     ts_compact = timestamp_iso.replace(':', '-').replace('.', '-')
@@ -244,6 +244,7 @@ def _save_leaderboard_style_summary(
         "artifacts": {
             "trajectory_file": trajectory_file,
             "run_result_folder": run_result_folder,
+            "video_file": video_file,
         },
     }
     with open(out_path, 'w') as f:
@@ -300,9 +301,8 @@ def main():
     if only_string:
         # オフライン採点
         score = _eval_string_offline(trajectory, cfg)
-        # HTMLレンダ（プレースホルダ画像）
-        img_b64 = _default_placeholder_png_base64()
-        render_html = _build_render_html(task_id, states, actions, img_b64)
+        # HTMLレンダ（画像なし）
+        render_html = _build_render_html(task_id, states, actions)
         run_dir.mkdir(parents=True, exist_ok=True)
         render_path = run_dir / f'render_{task_id}.html'
         with open(render_path, 'w') as f:
@@ -361,6 +361,7 @@ def main():
             config_obj=cfg,
             trajectory_file=trajectory_file,
             run_result_folder=str(run_dir),
+            video_file=str(Path(trajectory_file).with_suffix('.webm')),
         )
         # サマリーに詳細を追記
         try:
@@ -371,6 +372,7 @@ def main():
                 p['pages_visited'] = pages_visited
                 artifacts = p.get('artifacts', {})
                 artifacts['html_render_file'] = str(render_path)
+                artifacts['video_file'] = str(Path(trajectory_file).with_suffix('.webm'))
                 if json_dump_file.exists():
                     artifacts['json_dump_file'] = str(json_dump_file)
                 artifacts['final_url'] = final_url
@@ -424,8 +426,8 @@ def main():
 
             # HTMLレンダ生成
             states, actions = _extract_pairs_from_trajectory(trajectory)
-            img_b64 = _capture_screenshot_base64(page)
-            render_html = _build_render_html(task_id, states, actions, img_b64)
+            # 画像は使用しない
+            render_html = _build_render_html(task_id, states, actions)
             run_dir.mkdir(parents=True, exist_ok=True)
             render_path = run_dir / f'render_{task_id}.html'
             with open(render_path, 'w') as f:
@@ -481,6 +483,7 @@ def main():
                 config_obj=cfg,
                 trajectory_file=trajectory_file,
                 run_result_folder=str(run_dir),
+                video_file=str(Path(trajectory_file).with_suffix('.webm')),
             )
             # サマリーに詳細を追記
             try:
@@ -491,6 +494,7 @@ def main():
                     p['pages_visited'] = pages_visited
                     artifacts = p.get('artifacts', {})
                     artifacts['html_render_file'] = str(render_path)
+                    artifacts['video_file'] = str(Path(trajectory_file).with_suffix('.webm'))
                     if json_dump_file.exists():
                         artifacts['json_dump_file'] = str(json_dump_file)
                     artifacts['final_url'] = page.url

@@ -97,6 +97,40 @@ function buildModelCandidates(): ModelCandidate[] {
 
 export async function runSingleQuery(query: string): Promise<void> {
   console.log('WebGraph-Agent DuckDB/CSV AI エージェントを起動しています...');
+  
+  // メモリディレクトリの初期化（起動時クリア）
+  const memoryClearOnStart = String(process.env.AGENT_MEMORY_CLEAR_ON_START ?? 'false').toLowerCase() === 'true';
+  const memoryDir = path.resolve(process.cwd(), 'memories');
+  
+  try {
+    // メモリディレクトリを作成（存在しない場合）
+    await fs.mkdir(memoryDir, { recursive: true });
+    console.log(`[Memory] ディレクトリ初期化: ${memoryDir}`);
+    
+    if (memoryClearOnStart) {
+      console.log('[Memory] AGENT_MEMORY_CLEAR_ON_START=true: 起動時にメモリファイルをクリアします');
+      try {
+        const entries = await fs.readdir(memoryDir, { withFileTypes: true });
+        let clearedCount = 0;
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+            const filePath = path.join(memoryDir, entry.name);
+            await fs.unlink(filePath);
+            clearedCount += 1;
+            console.log(`[Memory] クリア: ${entry.name}`);
+          }
+        }
+        console.log(`[Memory] ${clearedCount} 個の .md ファイルをクリアしました`);
+      } catch (e: any) {
+        console.log(`[Memory] クリア処理中にエラー: ${e?.message ?? e}`);
+      }
+    } else {
+      console.log('[Memory] 起動時クリアは無効（AGENT_MEMORY_CLEAR_ON_START=false）');
+    }
+  } catch (e: any) {
+    console.log(`[Memory] 初期化エラー: ${e?.message ?? e}`);
+  }
+  
   console.log('\n========================================');
   console.log('[環境変数] 詳細情報');
   console.log('========================================');
@@ -251,6 +285,10 @@ async function runWebArenaEvaluation(query: string, answer: string): Promise<voi
       : path.resolve(__dirname, '..', '..', 'output', 'webarena', 'trajectories', `task_${taskId}_${timestamp}.json`);
     const evaluatedAt = new Date().toISOString();
     await saveWebArenaTrajectory(trajPath, cdpEndpoint, evaluatedAt);
+    try {
+      const videoPath = trajPath.replace(/\.json$/i, '.webm');
+      console.log(`[WebArena] 録画ファイル予定名: ${videoPath}`);
+    } catch {}
     console.log(`[WebArena] Trajectory保存: ${trajPath}`);
     
     // Python評価スクリプト実行

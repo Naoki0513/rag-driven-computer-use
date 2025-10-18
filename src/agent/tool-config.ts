@@ -49,6 +49,64 @@ export function buildToolConfig(): ToolConfiguration {
       },
       {
         toolSpec: {
+          name: 'memory',
+          description: isEn
+            ? 'Store and retrieve information across conversations through a memory file directory (/memories). Claude can create, read, update, and delete files that persist between sessions. IMPORTANT: ALWAYS VIEW YOUR MEMORY DIRECTORY BEFORE DOING ANYTHING ELSE. As you work, record status/progress/thoughts in your memory. Supported commands: view (show directory or file), create (create/overwrite file), str_replace (replace text), insert (insert at line), delete (remove file/dir), rename (rename/move). All paths must be within /memories directory for security.'
+            : 'メモリファイルディレクトリ (/memories) を通じて会話間で情報を保存・取得します。Claudeはセッション間で永続化されるファイルを作成、読み込み、更新、削除できます。重要: 他の操作をする前に必ずメモリディレクトリを確認してください。作業中は進捗状況や思考をメモリに記録します。サポートされているコマンド: view (ディレクトリまたはファイルの表示), create (ファイルの作成/上書き), str_replace (テキストの置換), insert (行への挿入), delete (ファイル/ディレクトリの削除), rename (名前変更/移動)。セキュリティのため、すべてのパスは /memories ディレクトリ内である必要があります。',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                command: { 
+                  type: 'string', 
+                  enum: ['view', 'create', 'str_replace', 'insert', 'delete', 'rename'],
+                  description: isEn ? 'Command to execute' : '実行するコマンド'
+                },
+                path: { 
+                  type: 'string', 
+                  description: isEn ? 'Path to file or directory (within /memories)' : 'ファイルまたはディレクトリのパス (/memories 内)'
+                },
+                old_path: { 
+                  type: 'string', 
+                  description: isEn ? 'Source path for rename command' : 'renameコマンドの元パス'
+                },
+                new_path: { 
+                  type: 'string', 
+                  description: isEn ? 'Destination path for rename command' : 'renameコマンドの先パス'
+                },
+                file_text: { 
+                  type: 'string', 
+                  description: isEn ? 'Full file content for create command' : 'createコマンドのファイル内容全体'
+                },
+                old_str: { 
+                  type: 'string', 
+                  description: isEn ? 'Text to find for str_replace command (must be unique)' : 'str_replaceコマンドで検索するテキスト（一意である必要あり）'
+                },
+                new_str: { 
+                  type: 'string', 
+                  description: isEn ? 'Replacement text for str_replace command' : 'str_replaceコマンドの置換後テキスト'
+                },
+                insert_line: { 
+                  type: 'number', 
+                  description: isEn ? 'Line number for insert command (0-based)' : 'insertコマンドの行番号（0始まり）'
+                },
+                insert_text: { 
+                  type: 'string', 
+                  description: isEn ? 'Text to insert for insert command' : 'insertコマンドで挿入するテキスト'
+                },
+                view_range: { 
+                  type: 'array',
+                  items: { type: 'number' },
+                  description: isEn ? 'Optional [start_line, end_line] for view command' : 'viewコマンドの任意の行範囲 [開始行, 終了行]'
+                }
+              },
+              required: ['command']
+            }
+          }
+        }
+      },
+      {
+        toolSpec: {
           name: 'browser_goto',
           description: isEn
             ? 'Navigate to the specified URL or resolve id→URL from CSV and navigate. Authentication is auto-handled when necessary (env credentials + storageState). After navigation, chunk + rerank the snapshot by query (semantic query) and return only the top-N chunks (configured via AGENT_BROWSER_TOP_K).'

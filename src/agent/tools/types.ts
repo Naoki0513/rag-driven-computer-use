@@ -12,7 +12,8 @@ export type ToolUseInput =
   | { name: 'browser_select'; input: { ref: string; values?: string[]; labels?: string[]; query: string }; toolUseId: string }
   | { name: 'browser_check'; input: { ref: string; checked: boolean; query: string }; toolUseId: string }
   | { name: 'browser_evaluate'; input: { script: string; arg?: any; query: string }; toolUseId: string }
-  | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string };
+  | { name: 'todo'; input: { actions: Array<{ action: 'addTask' | 'setDone' | 'editTask'; texts?: string[]; indexes?: number[] }> }; toolUseId: string }
+  | { name: 'memory'; input: { command: string; path?: string; [key: string]: any }; toolUseId: string };
 
 
 
