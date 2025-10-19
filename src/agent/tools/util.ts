@@ -158,7 +158,7 @@ export function formatToolError(err: unknown, maxLen: number = 180): string {
   const raw = typeof err === 'string' ? err : String((err as any)?.message ?? err);
   const msg = raw.replace(/\s+/g, ' ').trim();
   const head = msg.length > maxLen ? msg.slice(0, maxLen).trimEnd() + '…' : msg;
-  return `エラー: ${head}`;
+  return `Error: ${head}`;
 }
 
 // ===== スナップショット解決用の共通管理 =====

@@ -16,15 +16,15 @@ export async function browserGoto(urlOrId: string, opts?: { isId?: boolean; quer
       const rec = rows[0];
       const u = String((rec as any)?.url ?? '').trim();
       if (!u) {
-        const payload = await attachTodos({ action: 'goto', id, performed: [{ stage: 'resolve-id', ok: 'エラー: ID に対応する URL が見つかりません' }] });
+        const payload = await attachTodos({ action: 'goto', id, performed: [{ stage: 'resolve-id', ok: 'Error: URL not found for ID' }] });
         return JSON.stringify(payload);
       }
       navigateUrl = u;
       resolvedById = true;
-      performed.push({ stage: 'resolve-id', ok: true, note: `id→url 解決: ${id}` });
+      performed.push({ stage: 'resolve-id', ok: true, note: `id→url resolved: ${id}` });
     }
     if (!navigateUrl) {
-      const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed: [{ stage: 'init', ok: 'エラー: url が空です' }] });
+      const payload = await attachTodos({ action: 'goto', url: navigateUrl, performed: [{ stage: 'init', ok: 'Error: url is empty' }] });
       return JSON.stringify(payload);
     }
 

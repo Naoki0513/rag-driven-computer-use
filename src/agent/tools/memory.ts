@@ -47,7 +47,7 @@ function validatePath(inputPath: string): { valid: boolean; resolvedPath: string
       return {
         valid: false,
         resolvedPath: '',
-        error: `セキュリティエラー: パスは /memories ディレクトリ内である必要があります: ${inputPath}`
+        error: `Security error: Path must be within /memories directory: ${inputPath}`
       };
     }
     
@@ -56,7 +56,7 @@ function validatePath(inputPath: string): { valid: boolean; resolvedPath: string
     return {
       valid: false,
       resolvedPath: '',
-      error: `パス検証エラー: ${String(e?.message ?? e)}`
+      error: `Path validation error: ${String(e?.message ?? e)}`
     };
   }
 }
@@ -105,7 +105,7 @@ async function viewFile(filePath: string, viewRange?: [number, number]): Promise
     return `File: ${filePath} (${lines.length} lines)\n${content}`;
   } catch (e: any) {
     if (e.code === 'ENOENT') {
-      throw new Error(`ファイルが見つかりません: ${filePath}`);
+      throw new Error(`File not found: ${filePath}`);
     }
     throw e;
   }
@@ -118,7 +118,7 @@ async function createFile(filePath: string, fileText: string): Promise<string> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, fileText, 'utf-8');
   const lines = fileText.split('\n').length;
-  return `✓ ファイルを作成しました: ${filePath} (${lines} lines)`;
+  return `✓ File created: ${filePath} (${lines} lines)`;
 }
 
 /**
@@ -128,18 +128,18 @@ async function strReplace(filePath: string, oldStr: string, newStr: string): Pro
   const content = await fs.readFile(filePath, 'utf-8');
   
   if (!content.includes(oldStr)) {
-    throw new Error(`指定された文字列が見つかりません: "${oldStr.substring(0, 50)}${oldStr.length > 50 ? '...' : ''}"`);
+    throw new Error(`String not found: "${oldStr.substring(0, 50)}${oldStr.length > 50 ? '...' : ''}"`);
   }
   
   const occurrences = content.split(oldStr).length - 1;
   if (occurrences > 1) {
-    throw new Error(`指定された文字列が複数箇所で見つかりました（${occurrences}箇所）。より具体的な文字列を指定してください。`);
+    throw new Error(`String found in multiple locations (${occurrences}). Please specify a more unique string.`);
   }
   
   const newContent = content.replace(oldStr, newStr);
   await fs.writeFile(filePath, newContent, 'utf-8');
   
-  return `✓ 文字列を置換しました: ${filePath}`;
+  return `✓ String replaced: ${filePath}`;
 }
 
 /**
@@ -155,7 +155,7 @@ async function insertText(filePath: string, insertLine: number, insertText: stri
   const newContent = lines.join('\n');
   await fs.writeFile(filePath, newContent, 'utf-8');
   
-  return `✓ テキストを挿入しました: ${filePath} (line ${lineNum})`;
+  return `✓ Text inserted: ${filePath} (line ${lineNum})`;
 }
 
 /**
@@ -167,14 +167,14 @@ async function deletePath(targetPath: string): Promise<string> {
     
     if (stat.isDirectory()) {
       await fs.rm(targetPath, { recursive: true, force: true });
-      return `✓ ディレクトリを削除しました: ${targetPath}`;
+      return `✓ Directory deleted: ${targetPath}`;
     } else {
       await fs.unlink(targetPath);
-      return `✓ ファイルを削除しました: ${targetPath}`;
+      return `✓ File deleted: ${targetPath}`;
     }
   } catch (e: any) {
     if (e.code === 'ENOENT') {
-      throw new Error(`削除対象が見つかりません: ${targetPath}`);
+      throw new Error(`Target not found: ${targetPath}`);
     }
     throw e;
   }
@@ -187,10 +187,10 @@ async function renamePath(oldPath: string, newPath: string): Promise<string> {
   try {
     await fs.mkdir(path.dirname(newPath), { recursive: true });
     await fs.rename(oldPath, newPath);
-    return `✓ リネーム/移動しました: ${oldPath} → ${newPath}`;
+    return `✓ Renamed/moved: ${oldPath} → ${newPath}`;
   } catch (e: any) {
     if (e.code === 'ENOENT') {
-      throw new Error(`リネーム元が見つかりません: ${oldPath}`);
+      throw new Error(`Source not found: ${oldPath}`);
     }
     throw e;
   }
@@ -207,7 +207,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
       return JSON.stringify({ 
         ok: false, 
         action: 'memory', 
-        error: 'エラー: command は必須です（view, create, str_replace, insert, delete, rename）' 
+        error: 'Error: command is required (view, create, str_replace, insert, delete, rename)' 
       });
     }
     
@@ -255,7 +255,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
         const fileText = String(input?.file_text ?? '');
         
         if (!inputPath) {
-          return JSON.stringify({ ok: false, action: 'memory', command, error: 'エラー: path は必須です' });
+          return JSON.stringify({ ok: false, action: 'memory', command, error: 'Error: path is required' });
         }
         
         const validation = validatePath(inputPath);
@@ -277,7 +277,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
             ok: false, 
             action: 'memory', 
             command, 
-            error: 'エラー: path と old_str は必須です' 
+            error: 'Error: path and old_str are required' 
           });
         }
         
@@ -300,7 +300,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
             ok: false, 
             action: 'memory', 
             command, 
-            error: 'エラー: path と insert_text は必須です' 
+            error: 'Error: path and insert_text are required' 
           });
         }
         
@@ -317,7 +317,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
         const inputPath = String(input?.path ?? '').trim();
         
         if (!inputPath) {
-          return JSON.stringify({ ok: false, action: 'memory', command, error: 'エラー: path は必須です' });
+          return JSON.stringify({ ok: false, action: 'memory', command, error: 'Error: path is required' });
         }
         
         // /memories ルート自体の削除は禁止
@@ -326,7 +326,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
             ok: false, 
             action: 'memory', 
             command, 
-            error: 'エラー: /memories ルートディレクトリは削除できません' 
+            error: 'Error: Cannot delete /memories root directory' 
           });
         }
         
@@ -348,7 +348,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
             ok: false, 
             action: 'memory', 
             command, 
-            error: 'エラー: old_path と new_path は必須です' 
+            error: 'Error: old_path and new_path are required' 
           });
         }
         
@@ -370,7 +370,7 @@ export async function memoryTool(input: MemoryInput): Promise<string> {
         return JSON.stringify({ 
           ok: false, 
           action: 'memory', 
-          error: `エラー: 未知のコマンド: ${command}（view, create, str_replace, insert, delete, rename のいずれかを指定してください）` 
+          error: `Error: Unknown command: ${command} (must be one of: view, create, str_replace, insert, delete, rename)` 
         });
     }
   } catch (e: any) {

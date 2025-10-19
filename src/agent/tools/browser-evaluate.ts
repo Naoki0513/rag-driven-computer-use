@@ -12,8 +12,8 @@ export async function browserEvaluateScript(input: EvaluateInput): Promise<strin
       const query = String((input as any)?.query ?? '').trim();
       const arg = (input as any)?.arg;
 
-      if (!query) return JSON.stringify(await attachTodos({ ok: 'エラー: query は必須です', action: 'evaluate' }));
-      if (!script) return JSON.stringify(await attachTodos({ ok: 'エラー: script は必須です', action: 'evaluate' }));
+      if (!query) return JSON.stringify(await attachTodos({ ok: 'Error: query is required', action: 'evaluate' }));
+      if (!script) return JSON.stringify(await attachTodos({ ok: 'Error: script is required', action: 'evaluate' }));
 
       // 可能な限り安全に evaluate し、戻り値は JSON.stringify 可能な範囲に収める
       const result = arg !== undefined

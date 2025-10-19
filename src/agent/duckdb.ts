@@ -71,17 +71,17 @@ export async function getCsvSchemaString(): Promise<string> {
       `SELECT * FROM pages LIMIT 3`
     );
     const lines: string[] = [];
-    lines.push('CSV ソース: ' + csvPath);
-    lines.push('- 列情報:');
+    lines.push('CSV source: ' + csvPath);
+    lines.push('- Column info:');
     if (cols.length) {
       for (const c of cols) lines.push(`  - ${c.name}: ${c.type || 'UNKNOWN'}`);
     } else {
-      lines.push('  - 取得失敗');
+      lines.push('  - Failed to retrieve');
     }
     lines.push('');
-    lines.push(`- 総行数: ${countRows[0]?.c ?? '不明'}`);
+    lines.push(`- Total rows: ${countRows[0]?.c ?? 'Unknown'}`);
     lines.push('');
-    lines.push('- サンプル行 (最大3件):');
+    lines.push('- Sample rows (max 3):');
     if (samples.length) {
       for (let i = 0; i < samples.length; i += 1) {
         const rec = samples[i]!;
@@ -89,11 +89,11 @@ export async function getCsvSchemaString(): Promise<string> {
         lines.push(`  - ${i + 1}: ${url ? `URL=${url}` : JSON.stringify(rec)}`);
       }
     } else {
-      lines.push('  - なし');
+      lines.push('  - None');
     }
     return lines.join('\n');
   } catch (e: any) {
-    return `スキーマ取得エラー: ${String(e?.message ?? e)}`;
+    return `Schema fetch error: ${String(e?.message ?? e)}`;
   }
 }
 

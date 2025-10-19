@@ -12,14 +12,14 @@ export async function browserDragAndDrop(input: DragDropInput): Promise<string> 
       const targetRef = String((input as any)?.targetRef ?? '').trim();
       const query = String((input as any)?.query ?? '').trim();
 
-      if (!query) return JSON.stringify(await attachTodos({ ok: 'エラー: query は必須です', action: 'dragdrop', sourceRef, targetRef }));
-      if (!sourceRef || !targetRef) return JSON.stringify(await attachTodos({ ok: 'エラー: sourceRef/targetRef は必須です', action: 'dragdrop', sourceRef, targetRef }));
+      if (!query) return JSON.stringify(await attachTodos({ ok: 'Error: query is required', action: 'dragdrop', sourceRef, targetRef }));
+      if (!sourceRef || !targetRef) return JSON.stringify(await attachTodos({ ok: 'Error: sourceRef and targetRef are required', action: 'dragdrop', sourceRef, targetRef }));
 
       const snap = getResolutionSnapshotText();
       const src = await resolveLocatorByRef(page, sourceRef, snap ? { resolutionSnapshotText: snap } : undefined);
       const dst = await resolveLocatorByRef(page, targetRef, snap ? { resolutionSnapshotText: snap } : undefined);
-      if (!src) throw new Error(`sourceRef=${sourceRef} が見つかりません`);
-      if (!dst) throw new Error(`targetRef=${targetRef} が見つかりません`);
+      if (!src) throw new Error(`Element not found for sourceRef=${sourceRef}`);
+      if (!dst) throw new Error(`Element not found for targetRef=${targetRef}`);
 
       await src.waitFor({ state: 'visible', timeout: t });
       await dst.waitFor({ state: 'visible', timeout: t });

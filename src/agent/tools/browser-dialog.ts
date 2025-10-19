@@ -13,7 +13,7 @@ export async function browserHandleDialog(input: DialogInput): Promise<string> {
       const query = String((input as any)?.query ?? '').trim();
       const triggerRef = String((input as any)?.triggerRef ?? '').trim();
 
-      if (!query) return JSON.stringify(await attachTodos({ ok: 'エラー: query は必須です', action: 'dialog', op: action }));
+      if (!query) return JSON.stringify(await attachTodos({ ok: 'Error: query is required', action: 'dialog', op: action }));
 
       const handler = async (dialog: any) => {
         try {
@@ -27,7 +27,7 @@ export async function browserHandleDialog(input: DialogInput): Promise<string> {
       if (triggerRef) {
         const snap = getResolutionSnapshotText();
         const loc = await resolveLocatorByRef(page, triggerRef, snap ? { resolutionSnapshotText: snap } : undefined);
-        if (!loc) throw new Error(`triggerRef=${triggerRef} に対応する要素が見つかりません`);
+        if (!loc) throw new Error(`Element not found for triggerRef=${triggerRef}`);
         try { await loc.click({ timeout: t }); } catch {}
       }
 

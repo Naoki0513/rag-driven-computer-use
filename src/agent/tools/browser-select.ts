@@ -13,13 +13,13 @@ export async function browserSelect(input: SelectInput): Promise<string> {
       const values = Array.isArray((input as any)?.values) ? (input as any).values.map((s: any) => String(s ?? '')) : [];
       const labels = Array.isArray((input as any)?.labels) ? (input as any).labels.map((s: any) => String(s ?? '')) : [];
 
-      if (!query) return JSON.stringify(await attachTodos({ ok: 'エラー: query は必須です', action: 'select', ref }));
-      if (!ref) return JSON.stringify(await attachTodos({ ok: 'エラー: ref は必須です', action: 'select', ref }));
-      if (!values.length && !labels.length) return JSON.stringify(await attachTodos({ ok: 'エラー: values または labels のいずれかは必須です', action: 'select', ref }));
+      if (!query) return JSON.stringify(await attachTodos({ ok: 'Error: query is required', action: 'select', ref }));
+      if (!ref) return JSON.stringify(await attachTodos({ ok: 'Error: ref is required', action: 'select', ref }));
+      if (!values.length && !labels.length) return JSON.stringify(await attachTodos({ ok: 'Error: values or labels is required', action: 'select', ref }));
 
       const _snapForResolve = getResolutionSnapshotText();
       const loc = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
-      if (!loc) throw new Error(`ref=${ref} に対応する要素が見つかりません`);
+      if (!loc) throw new Error(`Element not found for ref=${ref}`);
 
       await loc.waitFor({ state: 'visible', timeout: t });
       if (values.length) {

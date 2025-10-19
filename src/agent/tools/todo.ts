@@ -90,7 +90,7 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
 
     async function doAddTask(inp: TodoToolActionInput): Promise<{ ok: true; added: string[] } | { ok: string }>{
       const list = normalizeTasks(inp.texts);
-      if (!list.length) return { ok: 'エラー: addTask: texts が空です' };
+      if (!list.length) return { ok: 'Error: addTask: texts is empty' };
       // 既存タスクを抽出
       const existing = extractTasksWithPositions(current).map((t) => ({ done: t.done, text: t.text }));
       const merged = existing.concat(list.map((t) => ({ done: false, text: t })));
@@ -103,9 +103,9 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
 
     async function doSetDone(inp: TodoToolActionInput): Promise<{ ok: true; indexes?: number[] } | { ok: string }>{
       const idxes = Array.isArray(inp.indexes) ? inp.indexes : [];
-      if (!idxes.length) return { ok: 'エラー: setDone: indexes が空です' };
+      if (!idxes.length) return { ok: 'Error: setDone: indexes is empty' };
       const tasks = extractTasksWithPositions(current);
-      if (!tasks.length) return { ok: 'エラー: setDone: タスク行が見つかりません' };
+      if (!tasks.length) return { ok: 'Error: setDone: No task lines found' };
 
       const total = tasks.length;
       const invalid: number[] = [];
@@ -117,9 +117,9 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
       }
       if (invalid.length || already.length) {
         const parts: string[] = [];
-        if (invalid.length) parts.push(`不正な index: [${invalid.join(', ')}]`);
-        if (already.length) parts.push(`既に完了済み index: [${already.join(', ')}]`);
-        return { ok: `エラー: setDone: ${parts.join(' / ')}（処理は中止されました）` };
+        if (invalid.length) parts.push(`Invalid index: [${invalid.join(', ')}]`);
+        if (already.length) parts.push(`Already done index: [${already.join(', ')}]`);
+        return { ok: `Error: setDone: ${parts.join(' / ')} (operation aborted)` };
       }
 
       const updated = tasks.map((t, i) => ({ done: t.done || idxes.includes(i + 1), text: t.text }));
@@ -133,9 +133,9 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
     async function doEditTask(inp: TodoToolActionInput): Promise<{ ok: true; indexes?: number[]; texts?: string[] } | { ok: string }>{
       const idxes = Array.isArray(inp.indexes) ? inp.indexes : [];
       const texts = normalizeTasks(inp.texts);
-      if (!idxes.length || !texts.length || idxes.length !== texts.length) return { ok: 'エラー: editTask: indexes/texts が不正です' };
+      if (!idxes.length || !texts.length || idxes.length !== texts.length) return { ok: 'Error: editTask: indexes/texts are invalid' };
       const tasks = extractTasksWithPositions(current);
-      if (!tasks.length) return { ok: 'エラー: editTask: タスク行が見つかりません' };
+      if (!tasks.length) return { ok: 'Error: editTask: No task lines found' };
 
       const total = tasks.length;
       const invalid: number[] = [];
@@ -144,7 +144,7 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
         if (idx <= 0 || idx > total) invalid.push(idxRaw as number);
       }
       if (invalid.length) {
-        return { ok: `エラー: editTask: 不正な index: [${invalid.join(', ')}]（処理は中止されました）` };
+        return { ok: `Error: editTask: Invalid index: [${invalid.join(', ')}] (operation aborted)` };
       }
 
       const updated = tasks.map((t) => ({ done: t.done, text: t.text }));
@@ -153,7 +153,7 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
         const newText = String(texts[i] ?? '').trim();
         // normalizeTasks により空文字は除外済みだが二重防御
         if (idx <= 0 || idx > total || !newText) {
-          return { ok: 'エラー: editTask: indexes/texts が不正です（空文字または範囲外）' };
+          return { ok: 'Error: editTask: indexes/texts are invalid (empty or out of range)' };
         }
         updated[idx - 1]!.text = newText;
       }
@@ -170,7 +170,7 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
       if (a === 'addTask') return doAddTask(inp);
       if (a === 'setDone') return doSetDone(inp);
       if (a === 'editTask') return doEditTask(inp);
-      return { ok: `エラー: 未知の action=${a}` };
+      return { ok: `Error: Unknown action=${a}` };
     }
 
     if (isBatch) {
@@ -187,7 +187,7 @@ export async function todoTool(input: TodoBatchInput): Promise<string> {
       return JSON.stringify({ ok: true, action: 'batch', results, todos: { path: 'todo.md', content } });
     }
 
-    throw new Error('actions が未指定です');
+    throw new Error('actions not specified');
   } catch (e: any) {
     const content = await readFileSafe(filePath);
     return JSON.stringify({ ok: formatToolError(e), action: 'batch', todos: { path: 'todo.md', content } });

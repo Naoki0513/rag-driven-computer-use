@@ -12,12 +12,12 @@ export async function browserCheck(input: CheckInput): Promise<string> {
       const checked = String((input as any)?.checked ?? '').toLowerCase() === 'true' || (input as any)?.checked === true;
       const query = String((input as any)?.query ?? '').trim();
 
-      if (!query) return JSON.stringify(await attachTodos({ ok: 'エラー: query は必須です', action: 'check', ref }));
-      if (!ref) return JSON.stringify(await attachTodos({ ok: 'エラー: ref は必須です', action: 'check', ref }));
+      if (!query) return JSON.stringify(await attachTodos({ ok: 'Error: query is required', action: 'check', ref }));
+      if (!ref) return JSON.stringify(await attachTodos({ ok: 'Error: ref is required', action: 'check', ref }));
 
       const _snapForResolve = getResolutionSnapshotText();
       const loc = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
-      if (!loc) throw new Error(`ref=${ref} に対応する要素が見つかりません`);
+      if (!loc) throw new Error(`Element not found for ref=${ref}`);
 
       await loc.waitFor({ state: 'visible', timeout: t });
       await loc.setChecked(checked);

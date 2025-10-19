@@ -24,7 +24,7 @@ export async function snapshotFetch(input: SnapshotFetchInput): Promise<string> 
       const payload = await attachTodos({ 
         ok: false, 
         action: 'snapshot_fetch', 
-        error: 'エラー: urls または ids のいずれか（または両方）を指定してください' 
+        error: 'Error: Specify urls or ids (or both)' 
       });
       return JSON.stringify(payload);
     }
@@ -52,7 +52,7 @@ export async function snapshotFetch(input: SnapshotFetchInput): Promise<string> 
         ok: true, 
         action: 'snapshot_fetch', 
         results: [],
-        note: '指定されたURLまたはIDに一致するページが見つかりませんでした'
+        note: 'No pages found matching the specified URL or ID'
       });
       return JSON.stringify(payload);
     }
@@ -75,7 +75,7 @@ export async function snapshotFetch(input: SnapshotFetchInput): Promise<string> 
     const payload = await attachTodos({ 
       ok: false, 
       action: 'snapshot_fetch', 
-      error: `エラー: ${String(e?.message ?? e)}` 
+      error: `Error: ${String(e?.message ?? e)}` 
     });
     return JSON.stringify(payload);
   }

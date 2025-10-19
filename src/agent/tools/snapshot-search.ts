@@ -34,7 +34,7 @@ export async function snapshotSearch(input: { keywords: string[]; vectorQuery: s
     const hasKeywordsArray = Array.isArray((input as any)?.keywords);
     
     if (!vectorQuery || (!hasKeywordsArray && !String((input as any)?.keywordQuery || '').trim())) {
-      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: keywords と vectorQuery は必須です（keywordQuery は後方互換として解釈されます）' });
+      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'Error: keywords and vectorQuery are required (keywordQuery is interpreted for backward compatibility)' });
       return JSON.stringify(payload);
     }
 
@@ -43,7 +43,7 @@ export async function snapshotSearch(input: { keywords: string[]; vectorQuery: s
     // インデックスローダーを作成
     const indexLoader = createIndexLoaderFromEnv();
     if (!indexLoader) {
-      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'エラー: AGENT_INDEX_NAME が未設定です。インデックスを使用するには環境変数を設定してください。' });
+      const payload = await attachTodos({ ok: false, action: 'snapshot_search', error: 'Error: AGENT_INDEX_NAME is not set. Please set the environment variable to use the index.' });
       return JSON.stringify(payload);
     }
 
@@ -72,7 +72,7 @@ export async function snapshotSearch(input: { keywords: string[]; vectorQuery: s
     console.info(`[snapshot_search] keywords(AND) terms=${JSON.stringify(terms)} matchedChunks=${keywordFiltered.length}/${allChunks.length}`);
 
     if (!keywordFiltered.length) {
-      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'キーワード検索で一致するチャンクが見つかりませんでした（keywordsを減らす/一般化するなど条件緩和を検討してください）' });
+      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'No chunks found matching keyword search (consider reducing/generalizing keywords to relax the condition)' });
       return JSON.stringify(payload);
     }
 
@@ -148,7 +148,7 @@ export async function snapshotSearch(input: { keywords: string[]; vectorQuery: s
     });
 
     if (!filteredVectorResults.length) {
-      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'ベクトル検索で結果が得られませんでした' });
+      const payload = await attachTodos({ ok: true, action: 'snapshot_search', results: [], note: 'No results from vector search' });
       return JSON.stringify(payload);
     }
 

@@ -13,11 +13,11 @@ export async function browserInput(input: InputInput): Promise<string> {
       const query = String((input as any)?.query ?? '').trim();
 
       if (!query) {
-        const payload = await attachTodos({ ok: 'エラー: query は必須です', action: 'input', ref, text });
+        const payload = await attachTodos({ ok: 'Error: query is required', action: 'input', ref, text });
         return JSON.stringify(payload);
       }
       if (!ref) {
-        const payload = await attachTodos({ ok: 'エラー: ref は必須です', action: 'input', ref, text });
+        const payload = await attachTodos({ ok: 'Error: ref is required', action: 'input', ref, text });
         return JSON.stringify(payload);
       }
 
@@ -26,7 +26,7 @@ export async function browserInput(input: InputInput): Promise<string> {
       const loc = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
 
       if (!loc) {
-        throw new Error(`ref=${ref} に対応する要素が見つかりません`);
+        throw new Error(`Element not found for ref=${ref}`);
       }
 
       await loc.waitFor({ state: 'visible', timeout: t });

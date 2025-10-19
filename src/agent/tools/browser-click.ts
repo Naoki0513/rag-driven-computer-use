@@ -13,11 +13,11 @@ export async function browserClick(input: ClickInput): Promise<string> {
       const isDouble = ((input as any)?.double === true) || String((input as any)?.double ?? '').toLowerCase() === 'true';
 
       if (!query) {
-        const payload = await attachTodos({ ok: 'エラー: query は必須です', action: 'click', ref });
+        const payload = await attachTodos({ ok: 'Error: query is required', action: 'click', ref });
         return JSON.stringify(payload);
       }
       if (!ref) {
-        const payload = await attachTodos({ ok: 'エラー: ref は必須です', action: 'click', ref });
+        const payload = await attachTodos({ ok: 'Error: ref is required', action: 'click', ref });
         return JSON.stringify(payload);
       }
 
@@ -26,7 +26,7 @@ export async function browserClick(input: ClickInput): Promise<string> {
       const el = await resolveLocatorByRef(page, ref, _snapForResolve ? { resolutionSnapshotText: _snapForResolve } : undefined);
 
       if (!el) {
-        throw new Error(`ref=${ref} に対応する要素が見つかりません`);
+        throw new Error(`Element not found for ref=${ref}`);
       }
 
       await el.waitFor({ state: 'visible', timeout: t });
