@@ -27,6 +27,37 @@ export type BedrockCallHandle = {
   generation?: any;
 };
 
+// 画像バイト等の巨大ペイロードをLangfuseログから除去/要約
+function sanitizeForLangfuse(obj: any): any {
+  const seen = new WeakSet();
+  function clone(x: any): any {
+    if (x === null || typeof x !== 'object') return x;
+    if (seen.has(x)) return x;
+    seen.add(x);
+    if (Array.isArray(x)) return x.map(clone);
+    const out: any = {};
+    for (const k of Object.keys(x)) {
+      const v = (x as any)[k];
+      // Bedrock Converse 互換の image ブロック検出
+      if (k === 'image' && v && typeof v === 'object') {
+        const img = { ...(v as any) } as any;
+        if (img.source && typeof img.source === 'object' && 'bytes' in img.source) {
+          const b = img.source.bytes as any;
+          let length = 0;
+          try { length = typeof b === 'string' ? b.length : (b?.length ?? 0); } catch {}
+          // bytes を短いプレースホルダに置換（データURI/生バイナリはログに残さない）
+          img.source = { ...img.source, bytes: `omitted (${length} bytes)` };
+        }
+        out[k] = img;
+        continue;
+      }
+      out[k] = clone(v);
+    }
+    return out;
+  }
+  return clone(obj);
+}
+
 export function startSessionTrace(sessionId: string, traceName?: string, metadata?: Record<string, any>): void {
   try {
     const client = initLangfuseIfPossible() as any;
@@ -44,19 +75,21 @@ export function recordBedrockCallStart(ctx: BedrockCallContext): BedrockCallHand
   try {
     const client = initLangfuseIfPossible();
     if (!client) return {};
+    // 画像等の巨大フィールドをLangfuseログ向けに安全化
+    const sanitizedInput = sanitizeForLangfuse(ctx.input);
     let gen: any = null;
     if (_currentTrace && typeof _currentTrace.generation === 'function') {
       gen = _currentTrace.generation({
         name: 'Bedrock Converse',
         model: ctx.modelId,
-        input: ctx.input,
+        input: sanitizedInput,
         metadata: { region: ctx.region },
       });
     } else {
       gen = (client as any).generation({
         name: 'Bedrock Converse',
         model: ctx.modelId,
-        input: ctx.input,
+        input: sanitizedInput,
         metadata: { region: ctx.region },
       });
     }
@@ -142,7 +175,7 @@ export function recordBedrockCallSuccess(handle: BedrockCallHandle, payload: { o
     const costDetails = computeCostDetails(usageDetails);
 
     const body = {
-      output: payload.response ?? null,
+      output: sanitizeForLangfuse(payload.response ?? null),
       // 互換: tracing SDK 形式（推奨）
       usageDetails: usageDetails ?? undefined,
       costDetails: costDetails ?? undefined,
@@ -184,6 +217,37 @@ export async function flushObservability(): Promise<void> {
     if (!client) return;
     if (typeof client.flushAsync === 'function') await client.flushAsync();
     if (typeof client.shutdownAsync === 'function') await client.shutdownAsync();
+  } catch {
+  }
+}
+
+// ===== Media (Images/Attachments) ログ =====
+// Langfuse は base64 data URI を自動抽出してオブジェクトストレージへアップロードし、
+// トレースにメディア参照を残す仕様。ここではスクリーンショットなどの画像を
+// data URI として Generation に記録するユーティリティを提供する。
+export function recordImageAttachment(name: string, dataUri: string, metadata?: Record<string, any>): void {
+  try {
+    const client = initLangfuseIfPossible();
+    if (!client) return;
+    const displayName = name && name.trim().length ? name : 'Image Attachment';
+    let gen: any = null;
+    if (_currentTrace && typeof _currentTrace.generation === 'function') {
+      gen = _currentTrace.generation({
+        name: displayName,
+        model: 'media:image',
+        input: { image: dataUri },
+        metadata,
+      });
+    } else {
+      gen = (client as any).generation({
+        name: displayName,
+        model: 'media:image',
+        input: { image: dataUri },
+        metadata,
+      });
+    }
+    if (typeof gen.end === 'function') gen.end();
+    else if (typeof gen.update === 'function') gen.update({});
   } catch {
   }
 }

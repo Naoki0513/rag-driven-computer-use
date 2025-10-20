@@ -11,6 +11,8 @@ import { browserClick } from './tools/browser-click.js';
 import { browserInput } from './tools/browser-input.js';
 import { browserPress } from './tools/browser-press.js';
 import { browserSnapshot } from './tools/browser-snapshot.js';
+import { browserWait } from './tools/browser-wait.js';
+import { browserScreenshot } from './tools/browser-screenshot.js';
 import { todoTool } from './tools/todo.js';
 import { snapshotSearch } from './tools/snapshot-search.js';
 import { snapshotFetch } from './tools/snapshot-fetch.js';
@@ -179,8 +181,8 @@ export async function converseLoop(
         // Context Management 設定（対応モデルの場合）
         const contextManagementConfig: any = {};
         if (supportsContextManagement(modelId)) {
-          const triggerValue = Number(process.env.AGENT_CONTEXT_CLEAR_TRIGGER ?? 50);
-          const trigger = Number.isFinite(triggerValue) && triggerValue > 0 ? Math.trunc(triggerValue) : 50;
+          const triggerValue = Number(process.env.AGENT_CONTEXT_CLEAR_TRIGGER ?? 20);
+          const trigger = Number.isFinite(triggerValue) && triggerValue > 0 ? Math.trunc(triggerValue) : 20;
           
           contextManagementConfig.context_management = {
             edits: [
@@ -542,6 +544,24 @@ export async function converseLoop(
             console.log(`Tool result (browser_evaluate): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
             return result;
           }});
+        } else if (name === 'browser_wait') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_wait ${JSON.stringify(inp)}`);
+            const payload: any = { duration: Number(inp.duration ?? 0), query: String(inp.query ?? '') };
+            const result = await browserWait(payload);
+            console.log(`Tool result (browser_wait): ${typeof result === 'string' ? result.substring(0, 500) : JSON.stringify(result).substring(0, 500)}${(typeof result === 'string' ? result.length : JSON.stringify(result).length) > 500 ? '...' : ''}`);
+            return result;
+          }});
+        } else if (name === 'browser_screenshot') {
+          const inp = (toolUse as any).input ?? {};
+          browserTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: browser_screenshot ${JSON.stringify(inp)}`);
+            const payload: any = { query: String(inp.query ?? ''), fullPage: inp.fullPage };
+            const result = await browserScreenshot(payload);
+            console.log(`Tool result (browser_screenshot): captured image`);
+            return result;
+          }});
         }
       }
 
@@ -557,7 +577,7 @@ export async function converseLoop(
       }));
 
       // ブラウザ操作は順次実行（順序保証・状態共有のため）
-      const browserResults: Array<{ index: number; toolUseId: string; text: string }> = [];
+      const browserResults: Array<{ index: number; toolUseId: string; text: string | any }> = [];
       const orderedBrowserTasks = [...browserTasks].sort((a, b) => a.index - b.index);
       for (const t of orderedBrowserTasks) {
         try {
@@ -572,7 +592,25 @@ export async function converseLoop(
       // 元の順序にマージ
       const merged = [...parallelResults, ...browserResults].sort((a, b) => a.index - b.index);
       for (const r of merged) {
-        toolResults.push({ toolResult: { toolUseId: r.toolUseId, content: [{ text: r.text }], status: 'success' } });
+        // スクリーンショットの場合は画像ブロックを追加
+        const resultData = typeof r.text === 'string' ? (() => { try { return JSON.parse(r.text); } catch { return null; } })() : r.text;
+        if (resultData && typeof resultData === 'object' && resultData.action === 'screenshot' && resultData.imageDataBase64) {
+          // Base64文字列をBufferに変換（BufferはUint8Arrayを継承しているため直接使用可能）
+          const imageBytes = Buffer.from(resultData.imageDataBase64, 'base64');
+          toolResults.push({ 
+            toolResult: { 
+              toolUseId: r.toolUseId, 
+              content: [
+                { image: { format: resultData.format || 'png', source: { bytes: imageBytes } } },
+                { text: JSON.stringify({ ok: resultData.ok, action: resultData.action, url: resultData.url, fullPage: resultData.fullPage, todos: resultData.todos }) }
+              ], 
+              status: 'success' 
+            } 
+          });
+        } else {
+          const textContent = typeof r.text === 'string' ? r.text : JSON.stringify(r.text);
+          toolResults.push({ toolResult: { toolUseId: r.toolUseId, content: [{ text: textContent }], status: 'success' } });
+        }
       }
       if (toolResults.length) {
         console.log(`[ToolExecution] Adding ${toolResults.length} tool result(s) to messages`);

@@ -11,8 +11,32 @@ export function addCachePoints(
 ): Message[] {
   if (!(isClaude || isNova)) return messages;
 
-  // 深いコピー
-  const messagesCloned: Message[] = JSON.parse(JSON.stringify(messages));
+  // 深いコピー（Uint8Array/Bufferを保持するための特別処理）
+  const messagesCloned: Message[] = messages.map(m => {
+    const contentCloned = Array.isArray((m as any).content)
+      ? (m as any).content.map((block: any) => {
+          if (!block || typeof block !== 'object') return block;
+          // toolResult の image を含むブロックは特別扱い
+          if (block.toolResult && Array.isArray(block.toolResult.content)) {
+            return {
+              ...block,
+              toolResult: {
+                ...block.toolResult,
+                content: block.toolResult.content.map((c: any) => {
+                  if (c && c.image && c.image.source && c.image.source.bytes) {
+                    // bytes が Uint8Array/Buffer の場合はそのまま保持
+                    return { ...c };
+                  }
+                  return c;
+                })
+              }
+            };
+          }
+          return { ...block };
+        })
+      : (m as any).content;
+    return { ...(m as any), content: contentCloned };
+  });
 
   // すべての既存 cachePoint を除去（messages 内）
   for (const m of messagesCloned as any[]) {
@@ -58,6 +82,8 @@ export function addCachePoints(
         const val = obj[i];
         if (typeof val === 'string' && val.length > threshold) {
           obj[i] = 'omitted';
+        } else if ((val instanceof Buffer || val instanceof Uint8Array) && val.length > threshold) {
+          obj[i] = 'omitted';
         } else if (typeof val === 'object' && val !== null) {
           elideObjectLongStrings(val, threshold);
         }
@@ -66,6 +92,8 @@ export function addCachePoints(
       for (const key of Object.keys(obj)) {
         const val = obj[key];
         if (typeof val === 'string' && val.length > threshold) {
+          obj[key] = 'omitted';
+        } else if ((val instanceof Buffer || val instanceof Uint8Array) && val.length > threshold) {
           obj[key] = 'omitted';
         } else if (typeof val === 'object' && val !== null) {
           elideObjectLongStrings(val, threshold);
@@ -92,8 +120,14 @@ export function addCachePoints(
             if (!block || !block.toolResult) continue;
             const tr = block.toolResult;
             const contents = Array.isArray(tr.content) ? tr.content : [];
+            // 画像データの省略（画像ブロックを配列から削除）
+            const filteredContents = [];
             for (const cb of contents) {
               if (!cb) continue;
+              // 画像ブロックは除外（無条件に省略）
+              if (cb.image && cb.image.source && cb.image.source.bytes) {
+                continue; // このブロックをスキップ
+              }
               // 文字列(JSON)の場合
               if (typeof cb.text === 'string') {
                 try {
@@ -103,6 +137,7 @@ export function addCachePoints(
                     cb.text = JSON.stringify(obj);
                   }
                 } catch {}
+                filteredContents.push(cb);
                 continue;
               }
               // オブジェクトの場合
@@ -111,7 +146,9 @@ export function addCachePoints(
                   elideObjectLongStrings(cb.text, elideThreshold);
                 } catch {}
               }
+              filteredContents.push(cb);
             }
+            tr.content = filteredContents;
           }
         }
       }

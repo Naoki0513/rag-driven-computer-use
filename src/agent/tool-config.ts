@@ -273,6 +273,44 @@ export function buildToolConfig(): ToolConfiguration {
           },
         },
       },
+      
+      {
+        toolSpec: {
+          name: 'browser_wait',
+          description: isEn
+            ? 'Wait for a specified duration in milliseconds. Use only as a last resort when elements operations fail and nothing changes. Requires duration (milliseconds) and query.'
+            : '指定したミリ秒数だけ待機します。要素操作が失敗して何も変わらない場合の最後の手段としてのみ使用します。duration（ミリ秒数、必須）と query（必須）を指定します。',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                duration: { type: 'number', description: isEn ? 'Duration to wait in milliseconds (e.g., 3000 for 3 seconds).' : '待機するミリ秒数（例: 3000で3秒）' },
+                query: { type: 'string', description: isEn ? 'Semantic query to find information after waiting. Returns top-N chunks (AGENT_BROWSER_TOP_K).' : '待機後に探したい要素/情報の意味クエリ。上位Nチャンク（AGENT_BROWSER_TOP_K）を返却' }
+              },
+              required: ['duration', 'query'],
+            },
+          },
+        },
+      },
+      
+      {
+        toolSpec: {
+          name: 'browser_screenshot',
+          description: isEn
+            ? 'Take a screenshot of the current page. By default captures the current viewport. Set fullPage=true to capture the entire page. Returns the image as PNG binary data in the tool result. Requires query.'
+            : '現在のページのスクリーンショットを取得します。デフォルトでは現在のビューポートをキャプチャします。fullPage=trueで全ページをキャプチャします。ツールリザルトとしてPNG形式の画像バイナリデータを返します。query（必須）を指定します。',
+          inputSchema: {
+            json: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: isEn ? 'Semantic query describing what to look for or verify in the screenshot.' : 'スクリーンショットで探したい/確認したい内容の意味クエリ' },
+                fullPage: { type: 'boolean', description: isEn ? 'If true, captures the entire page. If false or omitted, captures only the current viewport.' : 'trueの場合は全ページをキャプチャ。falseまたは省略時は現在のビューポートのみキャプチャ' }
+              },
+              required: ['query'],
+            },
+          },
+        },
+      },
     ],
   } as ToolConfiguration;
 }

@@ -99,7 +99,7 @@ export async function runSingleQuery(query: string): Promise<void> {
   console.log('WebGraph-Agent DuckDB/CSV AI エージェントを起動しています...');
   
   // メモリディレクトリの初期化（起動時クリア）
-  const memoryClearOnStart = String(process.env.AGENT_MEMORY_CLEAR_ON_START ?? 'false').toLowerCase() === 'true';
+  const memoryClearOnStart = String(process.env.AGENT_MEMORY_CLEAR_ON_START ?? 'true').toLowerCase() === 'true';
   const memoryDir = path.resolve(process.cwd(), 'memories');
   
   try {
@@ -125,7 +125,7 @@ export async function runSingleQuery(query: string): Promise<void> {
         console.log(`[Memory] クリア処理中にエラー: ${e?.message ?? e}`);
       }
     } else {
-      console.log('[Memory] 起動時クリアは無効（AGENT_MEMORY_CLEAR_ON_START=false）');
+      console.log('[Memory] 起動時クリアは無効（AGENT_MEMORY_CLEAR_ON_START=false または明示的に無効化）');
     }
   } catch (e: any) {
     console.log(`[Memory] 初期化エラー: ${e?.message ?? e}`);

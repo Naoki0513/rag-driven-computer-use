@@ -4,6 +4,8 @@ export type ToolUseInput =
   | { name: 'browser_input'; input: { ref: string; text: string; query: string }; toolUseId: string }
   | { name: 'browser_press'; input: { ref: string; key: string; query: string }; toolUseId: string }
   | { name: 'browser_snapshot'; input: {}; toolUseId: string }
+  | { name: 'browser_wait'; input: { duration: number; query: string }; toolUseId: string }
+  | { name: 'browser_screenshot'; input: { query: string; fullPage?: boolean }; toolUseId: string }
   | { name: 'snapshot_search'; input: { keywords: string[]; vectorQuery: string; topK?: number }; toolUseId: string }
   | { name: 'snapshot_fetch'; input: { urls?: string[]; ids?: string[] }; toolUseId: string }
   | { name: 'browser_hover'; input: { ref: string; query: string }; toolUseId: string }

@@ -49,6 +49,8 @@ ${schemaSection}
 - browser_evaluate: script（必須のJS文字列）, arg（任意）, query（必須）でブラウザ内 JS 実行
 - browser_input: ref（必須）、text（必須）、query（必須）を受け取り、refから要素を解決して入力。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
 - browser_press: ref（必須）、key（必須）、query（必須）を受け取り、refから要素を解決して送信。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
+- browser_wait: duration（必須、ミリ秒数）と query（必須）を指定して待機。要素操作が失敗して何も変わらない場合の最後の手段としてのみ使用。実行後は {query} に基づき上位Nチャンク（AGENT_BROWSER_TOP_K）を返却
+- browser_screenshot: query（必須）を指定して現在ページのスクリーンショットを取得。デフォルトでは現在のビューポートをキャプチャ。fullPage=trueで全ページをキャプチャ。PNG形式の画像バイナリをツールリザルトとして返却
   
 - browser_snapshot: 現在ページのスナップショットを取得。ブラウザースナップショットのみ、リランクせずページ全体のスナップショット本文（snapshots.text）をそのまま返却する（他のブラウザー系ツールはリランク上位Nチャンク（AGENT_BROWSER_TOP_K））。必ず最初にこのツールを使ってrefを取得してから、他のツールを使用してください。
 
@@ -99,6 +101,8 @@ Tool roles
 - browser_evaluate: Execute JavaScript in page. script (required string), optional arg, and query (required).
 - browser_input: Fill text into an element. Requires ref, text, and query. Ref is resolved via aria-ref with snapshot-based fallback. After the action, chunk + rerank by {query} and return top-N chunks.
 - browser_press: Send a key press to an element. Requires ref, key, and query. Ref is resolved via aria-ref with snapshot-based fallback. After the action, chunk + rerank by {query} and return top-N chunks.
+- browser_wait: Wait for a specified duration. Requires duration (milliseconds) and query. Use only as a last resort when element operations fail and nothing changes. After waiting, chunk + rerank by {query} and return top-N chunks (AGENT_BROWSER_TOP_K).
+- browser_screenshot: Take a screenshot of the current page. Requires query. By default captures the current viewport. Set fullPage=true to capture the entire page. Returns PNG image binary data in the tool result.
   
 - browser_snapshot: Take a snapshot of the current page. Unlike other browser tools, this returns the full snapshot text (snapshots.text) without reranking. Use this tool first to obtain refs before using other tools.
 
