@@ -46,7 +46,7 @@ ${schemaSection}
 - browser_select: ref（必須）、values(string[]) もしくは labels(string[]), query（必須）で select を選択
 - browser_check: ref（必須）、checked(boolean)、query（必須）でチェックボックス/ラジオを設定
 - browser_dialog: action=accept|dismiss, promptText（任意）, query（必須）でダイアログ操作
-- browser_evaluate: script（必須のJS文字列）, arg（任意）, query（必須）でブラウザ内 JS 実行
+- browser_evaluate: script（必須のJS文字列）, arg（任意）, query（必須）でブラウザ内 JS 実行。ページ内のデータ分析、要素計測、計算処理、複雑なDOM操作などのタスクで使用する。
 - browser_input: ref（必須）、text（必須）、query（必須）を受け取り、refから要素を解決して入力。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
 - browser_press: ref（必須）、key（必須）、query（必須）を受け取り、refから要素を解決して送信。refはaria-refセレクターで解決され、失敗時は自動的にスナップショットから役割と名前を推定してフォールバック。実行後は {query} に基づきスナップショットを階層チャンク化+リランクし上位Nチャンク（環境変数 AGENT_BROWSER_TOP_K）を返却
 - browser_wait: duration（必須、ミリ秒数）と query（必須）を指定して待機。要素操作が失敗して何も変わらない場合の最後の手段としてのみ使用。実行後は {query} に基づき上位Nチャンク（AGENT_BROWSER_TOP_K）を返却
@@ -98,7 +98,7 @@ Tool roles
 - browser_select: Select options for a select element. ref (required), values(string[]) or labels(string[]), and query (required).
 - browser_check: Set checkbox/radio state. ref (required), checked(boolean), and query (required).
 - browser_dialog: Handle dialogs with action=accept|dismiss, optional promptText, and query (required).
-- browser_evaluate: Execute JavaScript in page. script (required string), optional arg, and query (required).
+- browser_evaluate: Execute JavaScript in page. script (required string), optional arg, and query (required). Used for tasks requiring in-page data analysis, element measurement, calculations, and complex DOM operations.
 - browser_input: Fill text into an element. Requires ref, text, and query. Ref is resolved via aria-ref with snapshot-based fallback. After the action, chunk + rerank by {query} and return top-N chunks.
 - browser_press: Send a key press to an element. Requires ref, key, and query. Ref is resolved via aria-ref with snapshot-based fallback. After the action, chunk + rerank by {query} and return top-N chunks.
 - browser_wait: Wait for a specified duration. Requires duration (milliseconds) and query. Use only as a last resort when element operations fail and nothing changes. After waiting, chunk + rerank by {query} and return top-N chunks (AGENT_BROWSER_TOP_K).

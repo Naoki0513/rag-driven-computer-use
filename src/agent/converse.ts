@@ -35,7 +35,10 @@ function supportsThinking(modelId: string): boolean {
   const id = String(modelId || '').toLowerCase();
   return id.includes('anthropic.claude-sonnet-4-20250514')
     || id.includes('anthropic.claude-opus-4-20250514')
-    || id.includes('anthropic.claude-3-7-sonnet-20250219');
+    || id.includes('anthropic.claude-3-7-sonnet-20250219')
+    || id.includes('anthropic.claude-sonnet-4-5')
+    || id.includes('anthropic.claude-haiku-4-5')
+    || id.includes('anthropic.claude-opus-4-1');
 }
 
 function supportsContextManagement(modelId: string): boolean {
@@ -47,7 +50,8 @@ function supportsContextManagement(modelId: string): boolean {
     || id.includes('anthropic.claude-haiku-4-20250514')
     || id.includes('anthropic.claude-sonnet-4-5')
     || id.includes('anthropic.claude-haiku-4-5')
-    || id.includes('anthropic.claude-opus-4');
+    || id.includes('anthropic.claude-opus-4')
+    || id.includes('anthropic.claude-opus-4-1');
 }
 
 // （未使用のリージョンスロットリング補助関数群を削除し、簡素化）
