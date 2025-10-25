@@ -1,20 +1,20 @@
-# warp — Web Agent and Retrieval Pilot
+# rag-driven-computer-use — Web Agent and Retrieval Pilot
 
 [English](#english) | [日本語](#日本語)
 
 ## English
 
-warp is an AI agent that completes browser tasks quickly, affordably, and accurately by combining search with context compression.
+rag-driven-computer-use is an AI agent that completes browser tasks quickly, affordably, and accurately by combining search with context compression.
 
 ### How it compares
-| Metric | Baseline | warp |
+| Metric | Baseline | rag-driven-computer-use |
 | --- | --- | --- |
 | Time | 10.56s | 4.73s |
 | Cost | $0.0264 | $0.0083 |
 | Accuracy | In progress | In progress |
 
 ### Features
-| Aspect | Baseline | warp |
+| Aspect | Baseline | rag-driven-computer-use |
 | --- | --- | --- |
 | Use of external databases | × Not used (search/type on the fly) | ◎ Used (pre-crawled URLs/text) |
 | Snapshot format | △ Images + text (heavy/noisy) | ◎ Text only (lightweight/easy to extract) |
@@ -23,7 +23,7 @@ warp is an AI agent that completes browser tasks quickly, affordably, and accura
 | Upfront preparation | ◎ Little to none | △ Pre-crawling |
 
 ### Why Amazon Bedrock
-warp primarily uses Claude Sonnet 4 for agent reasoning and Cohere Rerank 3.5 to compress context via search. We use Amazon Bedrock because it’s the only platform that provides both models under one roof ([Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com), [Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)).
+rag-driven-computer-use primarily uses Claude Sonnet 4 for agent reasoning and Cohere Rerank 3.5 to compress context via search. We use Amazon Bedrock because it's the only platform that provides both models under one roof ([Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com), [Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)).
 
 ### How to use (overview)
 - Crawler: Pre-crawl target sites and save the site structure as structured data (CSV).
@@ -113,17 +113,17 @@ Notes:
 
 ## 日本語
 
-warpは、検索とコンテキスト圧縮でブラウザタスクを安く・速く・正確にこなすAIエージェントです。
+rag-driven-computer-useは、検索とコンテキスト圧縮でブラウザタスクを安く・速く・正確にこなすAIエージェントです。
 
 ### 従来手法との比較
-| 指標 | 従来の方法 | warp |
+| 指標 | 従来の方法 | rag-driven-computer-use |
 | --- | --- | --- |
 | 時間 | 10.56秒 | 4.73秒 |
 | 価格 | $0.0264 | $0.0083 |
 | 精度 | 測定中 | 測定中 |
 
 ### 特徴
-| 観点 | 従来手法 | warp |
+| 観点 | 従来手法 | rag-driven-computer-use |
 | --- | --- | --- |
 | 外部データベースの利用 | × 使わない（都度検索・画面入力） | ◎ 使う（事前クロールのURL/テキスト） |
 | スナップショット形式 | △ 画像+テキスト（重い/ノイズ） | ◎ テキストのみ（軽量/抽出容易） |
@@ -132,7 +132,7 @@ warpは、検索とコンテキスト圧縮でブラウザタスクを安く・�
 | 事前準備 | ◎ ほぼ不要 | △ 事前クロール |
 
 ### なぜ Amazon Bedrock なのか
-warpには、AIエージェントベンチマークで高評価なClaude Sonnet 4をメインのモデルとし、さらに検索によるコンテキスト圧縮のために、Cohere rerank 3.5モデルを使用している。これらのモデルを同じプラットフォームで利用できるのはAmazon Bedrockだけであるため（[Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com)、[Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)）。
+rag-driven-computer-useには、AIエージェントベンチマークで高評価なClaude Sonnet 4をメインのモデルとし、さらに検索によるコンテキスト圧縮のために、Cohere rerank 3.5モデルを使用している。これらのモデルを同じプラットフォームで利用できるのはAmazon Bedrockだけであるため（[Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com)、[Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)）。
 
 
 ### 使い方（概要）
