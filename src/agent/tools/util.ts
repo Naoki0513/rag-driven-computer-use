@@ -628,7 +628,9 @@ export async function saveWebArenaTrajectory(outPath: string, cdpEndpoint: strin
     if (m) {
       const taskId = m[1]!;
       const stamp = m[2]!; // 2025-10-16T19-41-07
-      const evalDir = path.resolve('/home/ec2-user/webarena-local/evaluation-result', `task_${taskId}`);
+      // 環境変数から評価結果ディレクトリを取得（未設定時は ../evaluation-result）
+      const baseEvalDir = (process.env.AGENT_WEBARENA_EVAL_DIR || '').trim() || '../evaluation-result';
+      const evalDir = path.resolve(baseEvalDir, `task_${taskId}`);
       pendingVideoTargetPath = path.join(evalDir, `${stamp}.webm`);
       try { await fs.mkdir(evalDir, { recursive: true }); } catch {}
       console.log(`[Video] 目標パスを設定しました: ${pendingVideoTargetPath}`);
