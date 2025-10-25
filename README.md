@@ -1,129 +1,20 @@
-# rag-driven-computer-use — Web Agent and Retrieval Pilot
+# rag-driven-computer-use
 
-[English](#english) | [日本語](#日本語)
+> RAGで検索とコンテキスト圧縮を実現する、ブラウザ操作AIエージェント
 
-## English
+rag-driven-computer-useは、事前にクロールしたWebサイトの構造化データ（CSV）を参照しながら、AIが自動的にブラウザ操作を実行するエージェントシステムです。従来の手法と比較して、**処理時間を約半分に短縮**し、**コストを約3分の1に削減**します。
 
-rag-driven-computer-use is an AI agent that completes browser tasks quickly, affordably, and accurately by combining search with context compression.
+## WebArenaベンチマーク結果
 
-### How it compares
-| Metric | Baseline | rag-driven-computer-use |
-| --- | --- | --- |
-| Time | 10.56s | 4.73s |
-| Cost | $0.0264 | $0.0083 |
-| Accuracy | In progress | In progress |
-
-### Features
-| Aspect | Baseline | rag-driven-computer-use |
-| --- | --- | --- |
-| Use of external databases | × Not used (search/type on the fly) | ◎ Used (pre-crawled URLs/text) |
-| Snapshot format | △ Images + text (heavy/noisy) | ◎ Text only (lightweight/easy to extract) |
-| Snapshot scope | × Entire screen | ◎ Only relevant parts (compressed) |
-| Coverage and accuracy | ◎ Whole web (accuracy = input-dependent) | △ Within target: high accuracy / outside: baseline-like |
-| Upfront preparation | ◎ Little to none | △ Pre-crawling |
-
-### Why Amazon Bedrock
-rag-driven-computer-use primarily uses Claude Sonnet 4 for agent reasoning and Cohere Rerank 3.5 to compress context via search. We use Amazon Bedrock because it's the only platform that provides both models under one roof ([Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com), [Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)).
-
-### How to use (overview)
-- Crawler: Pre-crawl target sites and save the site structure as structured data (CSV).
-- Agent: Executes browser operations while consulting the generated CSV.
-
-For concrete behavior and implementation details, see the scripts (`src/crawler/**`, `src/agent/**`). This guide focuses on minimal setup and how to run.
-
-### 1) Crawler (pre-crawl → structured data)
-1. Create a `.env` at the project root and set only the environment variables you need (unset values fall back to defaults).
-2. Run:
-
-Commands:
-
-```bash
-# First time only
-npm install
-npm run build
-npm run playwright:install
-
-# Run
-npm run start:crawler
-```
-
-Output: Defaults to `output/crawl.csv` (override with `CRAWLER_OUTPUT_FILE` or `CRAWLER_CSV_PATH`).
-
-Environment variables (.env, minimal)
-
-- Required: none (works with the demo site and default paths even if unset)
-
-Optional (notable)
-
-| Variable | Example | Description |
-| --- | --- | --- |
-| `CRAWLER_TARGET_URLS` | `https://example.com/` | Seed URL(s). Comma/whitespace separated. Defaults to demo site when unset. |
-| `CRAWLER_OUTPUT_FILE` | `output/example.csv` | Output CSV (takes precedence). Defaults to `output/crawl.csv`. |
-| `CRAWLER_HEADFUL` | `false` | Run browser visible (true) / headless (false). Default `false`. |
-
-Primary CSV columns: `URL`, `id`, `site`, `snapshotfor AI`, `timestamp` (consumed by the agent).
-
-Important note (click behavior)
-
-- During crawling, on each base page and base-variant page, the crawler attempts—in order—to click all clickable elements (button / tab / menuitem) extracted from the snapshot. This helps reveal state changes and discover new URLs.
-- Link elements are generally not clicked; their `href` values are collected via snapshot analysis.
-- Duplicate known URLs and duplicate elements are suppressed (skips known `href`s and deduplicates element signatures).
-
-### 2) Agent (browser automation with structured data)
-1. Set the required environment in `.env` (especially Bedrock settings, AWS credentials, and the CSV path).
-2. Run:
-
-Commands:
-
-```bash
-# First time only
-npm install
-npm run build
-npm run playwright:install
-
-# Use a prompt on the fly
-npm run start:agent -- --prompt "Your question or instruction"
-
-# Use AGENT_QUERY defined in .env (omit --prompt)
-npm run start:agent
-```
-
-Environment variables (.env, minimal)
-
-Required
-
-| Variable | Example | Description |
-| --- | --- | --- |
-| `AGENT_AWS_REGION` | `ap-northeast-1,us-west-2` | Preferred order of regions to call Bedrock (comma-separated). |
-| `AGENT_BEDROCK_MODEL_IDS` | `global.example.model-id:0` | Model IDs to use. If a single model, `AGENT_BEDROCK_MODEL_ID` also works. |
-| `AWS_PROFILE` | `default` | AWS credentials profile for Bedrock. If not using a profile, set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`. |
-| `AGENT_QUERY` (CLI omitted only) | `Please run the sample operation.` | Required when not using `--prompt`. |
-
-Optional (notable)
-
-| Variable | Example | Description |
-| --- | --- | --- |
-| `AGENT_CSV_PATH` | `output/example.csv` | Path to the CSV created by the crawler (defaults to `output/crawl.csv` when unset). |
-| `AGENT_HEADFUL` | `false` | Run browser visible (true) / headless (false). Default `false`. |
-| `AGENT_BEDROCK_RERANK_REGION` | `us-west-2` | Region for rerank. Defaults to `us-west-2`. |
-
-Notes:
-- CLI `--prompt`/`-p` takes precedence, then a positional argument, then `.env` `AGENT_QUERY`.
-- For sites that don’t require login, you can leave `AGENT_BROWSER_USERNAME`/`AGENT_BROWSER_PASSWORD` unset (auto-login is safely skipped).
-
-## 日本語
-
-rag-driven-computer-useは、検索とコンテキスト圧縮でブラウザタスクを安く・速く・正確にこなすAIエージェントです。
-
-### 従来手法との比較
 | 指標 | 従来の方法 | rag-driven-computer-use |
 | --- | --- | --- |
-| 時間 | 10.56秒 | 4.73秒 |
-| 価格 | $0.0264 | $0.0083 |
+| 処理時間 | 10.56秒 | 4.73秒 |
+| コスト | $0.0264 | $0.0083 |
 | 精度 | 測定中 | 測定中 |
 
-### 特徴
-| 観点 | 従来手法 | rag-driven-computer-use |
+## Playwright MCPとの比較
+
+| 観点 | Playwright MCP | rag-driven-computer-use |
 | --- | --- | --- |
 | 外部データベースの利用 | × 使わない（都度検索・画面入力） | ◎ 使う（事前クロールのURL/テキスト） |
 | スナップショット形式 | △ 画像+テキスト（重い/ノイズ） | ◎ テキストのみ（軽量/抽出容易） |
@@ -131,92 +22,119 @@ rag-driven-computer-useは、検索とコンテキスト圧縮でブラウザタ
 | 対象範囲と精度 | ◎ Web全体（精度=入力依存） | △ 対象内:高精度／対象外:従来並 |
 | 事前準備 | ◎ ほぼ不要 | △ 事前クロール |
 
-### なぜ Amazon Bedrock なのか
-rag-driven-computer-useには、AIエージェントベンチマークで高評価なClaude Sonnet 4をメインのモデルとし、さらに検索によるコンテキスト圧縮のために、Cohere rerank 3.5モデルを使用している。これらのモデルを同じプラットフォームで利用できるのはAmazon Bedrockだけであるため（[Claude Sonnet 4](https://www.anthropic.com/news/claude-4?ref=faangboss.com)、[Cohere Rerank 3.5](https://aws.amazon.com/jp/blogs/machine-learning/cohere-rerank-3-5-is-now-available-in-amazon-bedrock-through-rerank-api/)）。
+### 技術スタック
 
+- **LLM**: Claude Sonnet 4 (Amazon Bedrock)
+- **Rerank**: Cohere Rerank 3.5 (Amazon Bedrock)
+- **Browser**: Playwright
+- **データ形式**: CSV形式の構造化データ
 
-### 使い方（概要）
-- **クローラ**: 事前に特定サイトをクロールして、ウェブサイトの構造を構造化データ（CSV）に保存します。
-- **エージェント**: 生成された構造化データ（CSV）を参照しながら、ブラウザ操作を実行します。
+## Quick Start
 
-具体的な動作・実装の詳細は各スクリプト（`src/crawler/**`, `src/agent/**`）を参照してください。ここでは最低限の設定と実行手順のみを示します。
-
-### 1) クローラ（事前クロール → 構造化データ化）
-1. プロジェクト直下に `.env` を作成し、必要な環境変数のみ設定します（未設定はデフォルトが使われます）。
-2. 実行します。
-
-実行コマンド:
+### 1. セットアップ
 
 ```bash
-# 初回のみ
+# 依存関係のインストール
 npm install
-npm run build
-npm run playwright:install
 
-# 実行
+# ビルド
+npm run build
+
+# Playwrightブラウザのインストール
+npm run playwright:install
+```
+
+### 2. 環境変数の設定
+
+プロジェクトルートに `.env` ファイルを作成します：
+
+```bash
+# AWS認証情報
+AWS_PROFILE=default
+# または
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
+# Bedrock設定
+AGENT_AWS_REGION=ap-northeast-1,us-west-2
+AGENT_BEDROCK_MODEL_IDS=global.example.model-id:0
+
+# クローラ設定（任意）
+CRAWLER_TARGET_URLS=https://example.com/
+CRAWLER_OUTPUT_FILE=output/crawl.csv
+CRAWLER_HEADFUL=false
+
+# エージェント設定（任意）
+AGENT_CSV_PATH=output/crawl.csv
+AGENT_HEADFUL=false
+AGENT_BEDROCK_RERANK_REGION=us-west-2
+```
+
+### 3. クローラの実行（事前クロール）
+
+```bash
 npm run start:crawler
 ```
 
-出力: 既定は `output/crawl.csv`（`CRAWLER_OUTPUT_FILE` または `CRAWLER_CSV_PATH` を指定すると上書き）。
+出力: `output/crawl.csv`（デフォルト）
 
-環境変数（.env、最小限）
+主要なCSV列: `URL`, `id`, `site`, `snapshotfor AI`, `timestamp`
 
-- 必須: なし（未設定でもデモ用サイトと既定パスで実行可能）
+**補足（クリック挙動）**
+- 各ページでクリック可能要素（button / tab / menuitem）を順次クリック試行します
+- link要素はクリックせず、`href`はスナップショット解析で収集します
+- 重複URL・重複要素は抑制されます
 
-任意（主なもの）
-
-| 変数名 | 例 | 説明 |
-| --- | --- | --- |
-| `CRAWLER_TARGET_URLS` | `https://example.com/` | 基点URL（カンマ/空白区切りで複数可）。未設定時はデモ用サイト。 |
-| `CRAWLER_OUTPUT_FILE` | `output/example.csv` | 出力CSV（こちらが優先）。未設定時は `output/crawl.csv`。 |
-| `CRAWLER_HEADFUL` | `false` | ブラウザを可視（true）/非表示（false）で実行。既定 `false`。 |
-
-CSVの主な列: `URL`, `id`, `site`, `snapshotfor AI`, `timestamp`（エージェント側が参照します）。
-
-重要補足（クリック挙動）
-
-- クロール時は、各基底ページおよび基底切替ページで、スナップショットから抽出したクリック可能要素（button / tab / menuitem）を原則すべて順次クリック試行します（内部状態変化や新規URLの発見を目的）。
-- link 要素は原則クリックせず、`href` はスナップショット解析で収集します。
-- 既知URLの重複や同一要素の重複は抑制されます（既知`href`のスキップや要素シグネチャの重複排除）。
-
-### 2) エージェント（構造化データを参照してブラウザ操作）
-1. `.env` に必要な環境変数を設定（特に Bedrock の設定・AWS 認証情報・CSVパス）。
-2. 実行します。
-
-実行コマンド:
+### 4. エージェントの実行
 
 ```bash
-# 初回のみ
-npm install
-npm run build
-npm run playwright:install
-
-# その場のプロンプトを使う
+# プロンプトを直接指定する場合
 npm run start:agent -- --prompt "あなたの質問や命令文"
 
-# 事前に .env の AGENT_QUERY を使う（--prompt 省略）
+# .env の AGENT_QUERY を使用する場合
 npm run start:agent
 ```
 
-環境変数（.env、最小限）
+**優先順位**: `--prompt/-p` > 位置引数 > `.env` の `AGENT_QUERY`
 
-必須
+### 環境変数リファレンス
 
-| 変数名 | 例 | 説明 |
-| --- | --- | --- |
-| `AGENT_AWS_REGION` | `ap-northeast-1,us-west-2` | Bedrock を呼び出すリージョンの優先順（カンマ区切り）。 |
-| `AGENT_BEDROCK_MODEL_IDS` | `global.example.model-id:0` | 使用するモデルID。単一なら `AGENT_BEDROCK_MODEL_ID` でも可。 |
-| `AWS_PROFILE` | `default` | Bedrock 認証用の AWS 資格情報。プロファイルを使わない場合は `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` を設定。 |
-| `AGENT_QUERY`（CLI省略時のみ） | `サンプルの操作を実行してください。` | `--prompt` を使わない場合に必須。 |
+#### クローラ
 
-任意（主なもの）
+| 変数名 | 必須 | 説明 | デフォルト |
+| --- | --- | --- | --- |
+| `CRAWLER_TARGET_URLS` | 任意 | 基点URL（カンマ/空白区切り） | デモ用サイト |
+| `CRAWLER_OUTPUT_FILE` | 任意 | 出力CSVパス | `output/crawl.csv` |
+| `CRAWLER_HEADFUL` | 任意 | ブラウザを可視で実行 | `false` |
 
-| 変数名 | 例 | 説明 |
-| --- | --- | --- |
-| `AGENT_CSV_PATH` | `output/example.csv` | クローラで生成した CSV のパス（未設定時は `output/crawl.csv`）。 |
-| `AGENT_HEADFUL` | `false` | ブラウザを可視（true）/非表示（false）。既定 `false`。 |
-| `AGENT_BEDROCK_RERANK_REGION` | `us-west-2` | Rerank を行うリージョン。未設定時は `us-west-2`。 |
+#### エージェント
 
-補足:
-- `--prompt/-p` の CLI 指定が最優先、その次に位置引数、最後に `.env` の `AGENT_QUERY` が使われます。
-- ログインが不要なサイトでは `AGENT_BROWSER_USERNAME/AGENT_BROWSER_PASSWORD` は未設定で問題ありません（自動ログインは安全にスキップされます）。
+| 変数名 | 必須 | 説明 | デフォルト |
+| --- | --- | --- | --- |
+| `AGENT_AWS_REGION` | 必須 | Bedrockリージョン（カンマ区切り） | - |
+| `AGENT_BEDROCK_MODEL_IDS` | 必須 | モデルID | - |
+| `AWS_PROFILE` | 必須* | AWS認証プロファイル | - |
+| `AGENT_QUERY` | 条件付き** | クエリ（--prompt未使用時） | - |
+| `AGENT_CSV_PATH` | 任意 | CSVパス | `output/crawl.csv` |
+| `AGENT_HEADFUL` | 任意 | ブラウザを可視で実行 | `false` |
+| `AGENT_BEDROCK_RERANK_REGION` | 任意 | Rerankリージョン | `us-west-2` |
+
+\* `AWS_PROFILE` を使わない場合は `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` を設定
+\** `--prompt` を使わない場合のみ必須
+
+## アーキテクチャ
+
+```
+クローラ → CSV → エージェント → ブラウザ操作
+         ↓
+     構造化データ
+```
+
+1. **クローラ**: Webサイトを事前にクロールし、ページ構造をCSV形式で保存
+2. **エージェント**: CSVを参照しながら、Claude Sonnet 4とCohere Rerank 3.5を使用してブラウザ操作を実行
+
+詳細な実装は `src/crawler/**` と `src/agent/**` を参照してください。
+
+## ライセンス
+
+MIT License
