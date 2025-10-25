@@ -1,0 +1,98 @@
+{
+  "task_id": 43,
+  "success": true,
+  "score": 1.0,
+  "execution_time": 0.0797576904296875,
+  "question": "List the top 3 search terms in my store",
+  "reference_answer": "hollister, Joust Bag, Antonia Race Tank",
+  "pipeline_answer": "Based on the \"Top Search Terms\" table in your store's admin dashboard, here are the **top 3 search terms** (ranked by number of uses):\n\n1. **hollister** - 19 uses (1 result)\n2. **Joust Bag** - 4 uses (10 results)\n3. **Antonia Racer Tank** - 2 uses (23 results)\n\nThese search terms show what customers are searching for most frequently in your store, with \"hollister\" being by far the most popular search term.",
+  "grader_reasoning": "String evaluation: score=1.0",
+  "grader_extracted_result": "Based on the \"Top Search Terms\" table in your store's admin dashboard, here are the **top 3 search terms** (ranked by number of uses):\n\n1. **hollister** - 19 uses (1 result)\n2. **Joust Bag** - 4 uses (10 results)\n3. **Antonia Racer Tank** - 2 uses (23 results)\n\nThese search terms show what customers are searching for most frequently in your store, with \"hollister\" being by far the most popular search term.",
+  "grader_confidence": 100.0,
+  "webarena_eval_results": {
+    "string_detail": {
+      "references": [
+        "hollister",
+        "Joust Bag",
+        "Antonia Racer Tank"
+      ],
+      "targets": [
+        "Based on the \"Top Search Terms\" table in your store's admin dashboard, here are the **top 3 search terms** (ranked by number of uses):\n\n1. **hollister** - 19 uses (1 result)\n2. **Joust Bag** - 4 uses (10 results)\n3. **Antonia Racer Tank** - 2 uses (23 results)\n\nThese search terms show what customers are searching for most frequently in your store, with \"hollister\" being by far the most popular search term."
+      ],
+      "score": 1.0
+    }
+  },
+  "error": "",
+  "timestamp": "2025-10-19T03:23:09",
+  "task_config": {
+    "sites": [
+      "shopping_admin"
+    ],
+    "task_id": 43,
+    "require_login": true,
+    "storage_state": "./.auth/shopping_admin_state.json",
+    "start_url": "http://127.0.0.1:7780/admin",
+    "geolocation": null,
+    "intent_template": "List the top {{n}} search terms in my store",
+    "instantiation_dict": {
+      "n": "3"
+    },
+    "intent": "List the top 3 search terms in my store",
+    "require_reset": false,
+    "eval": {
+      "eval_types": [
+        "string_match"
+      ],
+      "reference_answers": {
+        "must_include": [
+          "hollister",
+          "Joust Bag",
+          "Antonia Racer Tank"
+        ]
+      },
+      "reference_url": "",
+      "program_html": [],
+      "string_note": "",
+      "reference_answer_raw_annotation": "hollister, Joust Bag, Antonia Race Tank"
+    },
+    "intent_template_id": 285
+  },
+  "citations": [],
+  "action_history": [
+    {
+      "step": 0,
+      "url_before": "http://127.0.0.1:7780/admin/admin/dashboard",
+      "action_type": 13,
+      "action": "GOTO_URL",
+      "element_name": "",
+      "element_id": "",
+      "key_comb": "",
+      "goto_url": "http://127.0.0.1:7780/admin/admin/dashboard",
+      "url_after": "http://127.0.0.1:7780/admin/admin/dashboard",
+      "raw_prediction": "{\"action\":\"goto\",\"url\":\"http://127.0.0.1:7780/admin/admin/dashboard\",\"performed\":[{\"stage\":\"resolve-id\",\"ok\":true,\"note\":\"id→url resolved: 2\"},{\"stage\":\"navigate\",\"ok\":true}],\"snapshots\":{\"top\":[{\"text\":\"- generic [active] [ref=e1]:\\n  - generic [ref=e37]:\\n    - main [ref=e57]:\\n      - generic [ref=e73]:\\n        - generic [ref=e81]:\\n          - generic [ref=e168]:\\n            - generic [ref=e247]:\\n              - table [ref=e250]:\\n                - rowgroup [ref=e251]:\\n                  - row \\\"Search Term Results Uses\\\" [ref=e252]:\\n                    - cell \\\"Search Term\\\" [ref=e253]:\\n                      - generic [ref=e254]: Search Term\\n                    - cell \\\"Results\\\" [ref=e255]:\\n                      - generic [ref=e256]: Results\\n                    - cell \\\"Uses\\\" [ref=e257]:\\n                      - generic [ref=e258]: Uses\\n\\n              - generic [ref=e248]: Top Search Terms\"},{\"text\":\"- generic [active] [ref=e1]:\\n  - generic [ref=e37]:\\n    - main [ref=e57]:\\n      - generic [ref=e73]:\\n        - generic [ref=e81]:\\n          - generic [ref=e168]:\\n            - generic [ref=e214]:\\n              - table [ref=e217]:\\n                - rowgroup [ref=e218]:\\n                  - row \\\"Search Term Results Uses\\\" [ref=e219]:\\n                    - cell \\\"Search Term\\\" [ref=e220]:\\n                      - generic [ref=e221]: Search Term\\n                    - cell \\\"Results\\\" [ref=e222]:\\n                      - generic [ref=e223]: Results\\n                    - cell \\\"Uses\\\" [ref=e224]:\\n                      - generic [ref=e225]: Uses\\n\\n              - generic [ref=e215]: Last Search Terms\"},{\"text\":\"- generic [active] [ref=e1]:\\n  - generic [ref=e37]:\\n    - main [ref=e57]:\\n      - generic [ref=e73]:\\n        - generic [ref=e81]:\\n          - generic [ref=e168]:\\n            - generic [ref=e181]:\\n              - table [ref=e184]:\\n                - rowgroup [ref=e193]:\\n                  - row \\\"Sarah Miller 5 $194.40\\\" [ref=e194]:\\n                    - cell \\\"Sarah Miller\\\" [ref=e195]\\n                    - cell \\\"5\\\" [ref=e196]\\n                    - cell \\\"$194.40\\\" [ref=e197]\\n                  - row \\\"Grace Nguyen 4 $190.00\\\" [ref=e198]:\\n                    - cell \\\"Grace Nguyen\\\" [ref=e199]\\n                    - cell \\\"4\\\" [ref=e200]\\n                    - cell \\\"$190.00\\\" [ref=e201]\\n                  - row \\\"Matt Baker 3 $151.40\\\" [ref=e202]:\\n                    - cell \\\"Matt Baker\\\" [ref=e203]\\n                    - cell \\\"3\\\" [ref=e204]\\n                    - cell \\\"$151.40\\\" [ref=e205]\\n                  - row \\\"Lily Potter 4 $188.20\\\" [ref=e206]:\\n                    - cell \\\"Lily Potter\\\" [ref=e207]\\n                    - cell \\\"4\\\" [ref=e208]\\n                    - cell \\\"$188.20\\\" [ref=e209]\\n                  - row \\\"Ava Brown 2 $83.40\\\" [ref=e210]:\\n                    - cell \\\"Ava Brown\\\" [ref=e211]\\n                    - cell \\\"2\\\" [ref=e212]\\n                    - cell \\\"$83.40\\\" [ref=e213]\"},{\"text\":\"- generic [active] [ref=e1]:\\n  - generic [ref=e37]:\\n    - main [ref=e57]:\\n      - generic [ref=e73]:\\n        - generic [ref=e81]:\\n          - generic [ref=e168]:\\n            - generic [ref=e247]:\\n              - table [ref=e250]:\\n                - rowgroup [ref=e259]:\\n                  - row \\\"hollister 1 19\\\" [ref=e260]:\\n                    - cell \\\"hollister\\\" [ref=e261]\\n                    - cell \\\"1\\\" [ref=e262]\\n                    - cell \\\"19\\\" [ref=e263]\\n                  - row \\\"Joust Bag 10 4\\\" [ref=e264]:\\n                    - cell \\\"Joust Bag\\\" [ref=e265]\\n                    - cell \\\"10\\\" [ref=e266]\\n                    - cell \\\"4\\\" [ref=e267]\\n                  - row \\\"Antonia Racer Tank 23 2\\\" [ref=e268]:\\n                    - cell \\\"Antonia Racer Tank\\\" [ref=e269]\\n                    - cell \\\"23\\\" [ref=e270]\\n                    - cell \\\"2\\\" [ref=e271]\\n                  - row \\\"tanks 23 1\\\" [ref=e272]:\\n                    - cell \\\"tanks\\\" [ref=e273]\\n                    - cell \\\"23\\\" [ref=e274]\\n                    - cell \\\"1\\\" [ref=e275]\\n                  - row \\\"WP10 1 1\\\" [ref=e276]:\\n                    - cell \\\"WP10\\\" [ref=e277]\\n                    - cell \\\"1\\\" [ref=e278]\\n                    - cell \\\"1\\\" [ref=e279]\"},{\"text\":\"- generic [active] [ref=e1]:\\n  - generic [ref=e37]:\\n    - main [ref=e57]:\\n      - generic [ref=e73]:\\n        - generic [ref=e81]:\\n          - generic [ref=e168]:\\n            - generic [ref=e214]:\\n              - table [ref=e217]:\\n                - rowgroup [ref=e226]:\\n                  - row \\\"tanks 23 1\\\" [ref=e227]:\\n                    - cell \\\"tanks\\\" [ref=e228]\\n                    - cell \\\"23\\\" [ref=e229]\\n                    - cell \\\"1\\\" [ref=e230]\\n                  - row \\\"nike 0 3\\\" [ref=e231]:\\n                    - cell \\\"nike\\\" [ref=e232]\\n                    - cell \\\"0\\\" [ref=e233]\\n                    - cell \\\"3\\\" [ref=e234]\\n                  - row \\\"Joust Bag 10 4\\\" [ref=e235]:\\n                    - cell \\\"Joust Bag\\\" [ref=e236]\\n                    - cell \\\"10\\\" [ref=e237]\\n                    - cell \\\"4\\\" [ref=e238]\\n                  - row \\\"hollister 1 19\\\" [ref=e239]:\\n                    - cell \\\"hollister\\\" [ref=e240]\\n                    - cell \\\"1\\\" [ref=e241]\\n                    - cell \\\"19\\\" [ref=e242]\\n                  - row \\\"Antonia Racer Tank 23 2\\\" [ref=e243]:\\n                    - cell \\\"Antonia Racer Tank\\\" [ref=e244]\\n                    - cell \\\"23\\\" [ref=e245]\\n                    - cell \\\"2\\\" [ref=e246]\"}],\"url\":\"http://127.0.0.1:7780/admin/admin/dashboard\"},\"meta\":{\"resolvedById\":true}}"
+    },
+    {
+      "step": 1,
+      "url_before": "http://127.0.0.1:7780/admin/admin/dashboard",
+      "action_type": 17,
+      "action": "STOP",
+      "element_name": "",
+      "element_id": "",
+      "key_comb": "",
+      "goto_url": "",
+      "url_after": "",
+      "raw_prediction": "stop [Based on the \"Top Search Terms\" table in your store's admin dashboard, here are the **top 3 search terms** (ranked by number of uses):\n\n1. **hollister** - 19 uses (1 result)\n2. **Joust Bag** - 4 uses (10 results)\n3. **Antonia Racer Tank** - 2 uses (23 results)\n\nThese search terms show what customers are searching for most frequently in your store, with \"hollister\" being by far the most popular search term.]"
+    }
+  ],
+  "artifacts": {
+    "trajectory_file": "/home/ec2-user/webarena-local/warp/output/webarena/trajectories/task_43_2025-10-19T03-23-09.json",
+    "run_result_folder": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_43_2025-10-19T03-23-09",
+    "video_file": "/home/ec2-user/webarena-local/warp/output/webarena/trajectories/task_43_2025-10-19T03-23-09.webm",
+    "html_render_file": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_43_2025-10-19T03-23-09/render_43.html",
+    "json_dump_file": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_43_2025-10-19T03-23-09/json_dump.json",
+    "final_url": "http://127.0.0.1:7780/admin/admin/dashboard"
+  },
+  "pages_visited": [
+    "http://127.0.0.1:7780/admin/admin/dashboard"
+  ]
+}

@@ -113,14 +113,14 @@ export async function runSingleQuery(query: string): Promise<void> {
         const entries = await fs.readdir(memoryDir, { withFileTypes: true });
         let clearedCount = 0;
         for (const entry of entries) {
-          if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+          if (entry.isFile() && (entry.name.toLowerCase().endsWith('.md') || entry.name.toLowerCase().endsWith('.txt'))) {
             const filePath = path.join(memoryDir, entry.name);
             await fs.unlink(filePath);
             clearedCount += 1;
             console.log(`[Memory] クリア: ${entry.name}`);
           }
         }
-        console.log(`[Memory] ${clearedCount} 個の .md ファイルをクリアしました`);
+        console.log(`[Memory] ${clearedCount} 個のメモリファイルをクリアしました`);
       } catch (e: any) {
         console.log(`[Memory] クリア処理中にエラー: ${e?.message ?? e}`);
       }
@@ -172,12 +172,11 @@ export async function runSingleQuery(query: string): Promise<void> {
     console.log(`  ${i + 1}. ${c.modelId} @ ${c.region}`);
   });
 
-  // Langfuse セッション（1回の runSingleQuery を1セッションとして紐づけ）
-  const sessionId = `agent-session-${Date.now()}`;
-  startSessionTrace(sessionId, 'WebGraph Agent Session', { queryPreview: query.slice(0, 120) });
-
-  // WebArena評価の事前確認
+  // WebArena評価の事前確認とstart_url、intent読み込み
   const enableWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+  let webarenaStartUrl: string | null = null;
+  let webarenaIntent: string | null = null;
+  let webarenaEvalConfig: any = null;
   if (enableWebArenaEval) {
     const configFilePath = String(process.env.AGENT_WEBARENA_CONFIG_FILE || '').trim();
     if (!configFilePath) {
@@ -196,8 +195,40 @@ export async function runSingleQuery(query: string): Promise<void> {
         console.warn('[WebArena] 評価は Trajectory 保存のみ実行されます');
         console.warn('[ヒント] 評価スクリプトのパスを AGENT_WEBARENA_EVAL_SCRIPT 環境変数で指定できます');
       }
+      
+      // configファイルからstart_url、intent、評価情報を読み込む
+      try {
+        const configContent = await fs.readFile(configFilePath, 'utf-8');
+        const config = JSON.parse(configContent);
+        if (config.start_url) {
+          webarenaStartUrl = String(config.start_url);
+          console.log(`[WebArena] start_url読み込み: ${webarenaStartUrl}`);
+        }
+        if (config.intent) {
+          webarenaIntent = String(config.intent);
+          console.log(`[WebArena] intent読み込み: ${webarenaIntent}`);
+        }
+        if (config.eval) {
+          webarenaEvalConfig = config.eval;
+          console.log(`[WebArena] 評価設定読み込み: ${JSON.stringify(config.eval.eval_types || [])}`);
+        }
+      } catch (e: any) {
+        console.warn(`[WebArena] 警告: configファイルの読み込みに失敗: ${e?.message ?? e}`);
+      }
     }
   }
+
+  // Langfuse セッション（1回の runSingleQuery を1セッションとして紐づけ）
+  // WebArena評価モードの場合は、intentが読み込めていればそれを使用
+  const sessionId = `agent-session-${Date.now()}`;
+  const actualQuery = (enableWebArenaEval && webarenaIntent) ? webarenaIntent : query;
+  const sessionMetadata: Record<string, any> = { queryPreview: actualQuery.slice(0, 120) };
+  if (enableWebArenaEval) {
+    sessionMetadata.webArenaEval = true;
+    if (webarenaIntent) sessionMetadata.intent = webarenaIntent;
+    if (webarenaStartUrl) sessionMetadata.startUrl = webarenaStartUrl;
+  }
+  startSessionTrace(sessionId, 'WebGraph Agent Session', sessionMetadata);
   
   // まず最初にブラウザを起動（以降の実行で共有・再利用）
   await ensureSharedBrowserStarted();
@@ -210,11 +241,35 @@ export async function runSingleQuery(query: string): Promise<void> {
     const schema = await getDatabaseSchemaString();
     console.log('[OK] CSVスキーマを取得しました');
 
-    const systemPrompt = createSystemPromptWithSchema(schema);
-    console.log(`\n実行中のクエリ: ${query}`);
+    const systemPrompt = createSystemPromptWithSchema(schema, webarenaEvalConfig);
+    
+    // WebArena評価の場合、intentとstart_urlを使用
+    let enhancedQuery = query || ''; // queryが空の場合は空文字列に
+    if (enableWebArenaEval) {
+      // intentが読み込めた場合は、それをqueryとして使用
+      if (webarenaIntent) {
+        enhancedQuery = webarenaIntent;
+        console.log(`\n[WebArena] configからintentを使用: ${webarenaIntent}`);
+      } else if (!enhancedQuery) {
+        throw new Error('[WebArena] configファイルからintentを読み込めず、AGENT_QUERYも指定されていません');
+      }
+      // start_urlもある場合は追加
+      if (webarenaStartUrl) {
+        const isEn = String(process.env.AGENT_LANG || '').toLowerCase().startsWith('en');
+        const prefix = isEn
+          ? `[WebArena Task] Start from this URL: ${webarenaStartUrl}\n\nTask: `
+          : `[WebArena タスク] 次のURLから開始してください: ${webarenaStartUrl}\n\nタスク: `;
+        enhancedQuery = prefix + enhancedQuery;
+        console.log(`[WebArena] start_urlをクエリに追加しました`);
+      }
+    } else if (!enhancedQuery) {
+      throw new Error('クエリが指定されていません');
+    }
+    
+    console.log(`\n実行中のクエリ: ${enhancedQuery}`);
     console.log('\nエージェント:');
 
-    const { fullText, usage } = await converseLoop(query, systemPrompt, candidates);
+    const { fullText, usage, webarenaAnswer } = await converseLoop(enhancedQuery, systemPrompt, candidates);
     console.log(fullText);
     console.log('\nトークン使用情報:');
     console.log(`- 総入力トークン数: ${usage.input}`);
@@ -222,6 +277,11 @@ export async function runSingleQuery(query: string): Promise<void> {
     console.log(`- 総キャッシュ読み取りトークン数: ${usage.cacheRead}`);
     console.log(`- 総キャッシュ書き込みトークン数: ${usage.cacheWrite}`);
     console.log(`- 総トークン数: ${usage.input + usage.output}`);
+    
+    // WebArena最終回答のログ
+    if (webarenaAnswer) {
+      console.log(`\n[WebArena] 専用ツールで提供された最終回答: ${webarenaAnswer}`);
+    }
 
     // ToDo ファイルの内容を最後にログ出力（検証用）
     try {
@@ -236,9 +296,11 @@ export async function runSingleQuery(query: string): Promise<void> {
     }
 
     // WebArena評価の実行（オプション）
-    const enableWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
-    if (enableWebArenaEval) {
-      await runWebArenaEvaluation(query, fullText);
+    const enableWebArenaEvalFinal = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+    if (enableWebArenaEvalFinal) {
+      // webarena_final_answerツールの結果を使用（優先）、なければfullText
+      const finalAnswer = webarenaAnswer || fullText;
+      await runWebArenaEvaluation(enhancedQuery, finalAnswer);
     }
   } catch (e: any) {
     console.error('\n========================================');

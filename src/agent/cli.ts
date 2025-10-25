@@ -79,14 +79,21 @@ async function main() {
   const positionalQuery = String(argv._[0] ?? argv.query ?? '').trim();
   // 優先度: --prompt/-p > 位置引数 > 環境変数
   const query = cliPromptOption || positionalQuery || envQuery;
+  
+  // WebArena評価モードの場合は、クエリが空でもOK（runner.tsでconfigから読み込む）
+  const isWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+  
   // 受理したクエリのソースと内容を先に表示して、引数伝播の検証を容易にする
   try {
     const source = cliPromptOption ? '--prompt' : (positionalQuery ? 'positional' : (envQuery ? 'env' : 'none'));
     if (source !== 'none') {
       console.log(`[CLI] query source=${source} value="${query}"`);
+    } else if (isWebArenaEval) {
+      console.log('[CLI] WebArena評価モード: configファイルからintentを読み込みます');
     }
   } catch {}
-  if (!query) {
+  
+  if (!query && !isWebArenaEval) {
     console.error('クエリが指定されていません（--prompt/-p または 位置引数、もしくは AGENT_QUERY 環境変数で指定してください）');
     process.exit(1);
     return;

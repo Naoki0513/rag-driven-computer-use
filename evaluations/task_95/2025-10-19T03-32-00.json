@@ -1,0 +1,82 @@
+{
+  "task_id": 95,
+  "success": true,
+  "score": 1.0,
+  "execution_time": 0.07651329040527344,
+  "question": "Telll me the grand total of invoice 000000002.",
+  "reference_answer": "$39.64",
+  "pipeline_answer": "**The grand total of invoice 000000002 is $39.64**\n\nThis breaks down as:\n- Subtotal: $32.00\n- Shipping & Handling: $5.00\n- Tax: $2.64\n- **Grand Total: $39.64**",
+  "grader_reasoning": "String evaluation: score=1.0",
+  "grader_extracted_result": "**The grand total of invoice 000000002 is $39.64**\n\nThis breaks down as:\n- Subtotal: $32.00\n- Shipping & Handling: $5.00\n- Tax: $2.64\n- **Grand Total: $39.64**",
+  "grader_confidence": 100.0,
+  "webarena_eval_results": {
+    "string_detail": {
+      "references": [
+        "39.64"
+      ],
+      "targets": [
+        "**The grand total of invoice 000000002 is $39.64**\n\nThis breaks down as:\n- Subtotal: $32.00\n- Shipping & Handling: $5.00\n- Tax: $2.64\n- **Grand Total: $39.64**"
+      ],
+      "score": 1.0
+    }
+  },
+  "error": "",
+  "timestamp": "2025-10-19T03:32:00",
+  "task_config": {
+    "sites": [
+      "shopping_admin"
+    ],
+    "task_id": 95,
+    "require_login": true,
+    "storage_state": "./.auth/shopping_admin_state.json",
+    "start_url": "http://127.0.0.1:7780/admin",
+    "geolocation": null,
+    "intent_template": "Telll me the grand total of invoice {{id}}.",
+    "instantiation_dict": {
+      "id": "000000002"
+    },
+    "intent": "Telll me the grand total of invoice 000000002.",
+    "require_reset": false,
+    "eval": {
+      "eval_types": [
+        "string_match"
+      ],
+      "reference_answers": {
+        "must_include": [
+          "39.64"
+        ]
+      },
+      "reference_url": "",
+      "program_html": [],
+      "string_note": "",
+      "reference_answer_raw_annotation": "$39.64"
+    },
+    "intent_template_id": 274
+  },
+  "citations": [],
+  "action_history": [
+    {
+      "step": 0,
+      "url_before": "about:blank",
+      "action_type": 17,
+      "action": "STOP",
+      "element_name": "",
+      "element_id": "",
+      "key_comb": "",
+      "goto_url": "",
+      "url_after": "",
+      "raw_prediction": "stop [**The grand total of invoice 000000002 is $39.64**\n\nThis breaks down as:\n- Subtotal: $32.00\n- Shipping & Handling: $5.00\n- Tax: $2.64\n- **Grand Total: $39.64**]"
+    }
+  ],
+  "artifacts": {
+    "trajectory_file": "/home/ec2-user/webarena-local/warp/output/webarena/trajectories/task_95_2025-10-19T03-32-00.json",
+    "run_result_folder": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_95_2025-10-19T03-32-00",
+    "video_file": "/home/ec2-user/webarena-local/warp/output/webarena/trajectories/task_95_2025-10-19T03-32-00.webm",
+    "html_render_file": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_95_2025-10-19T03-32-00/render_95.html",
+    "json_dump_file": "/home/ec2-user/webarena-local/warp/output/webarena/runs/task_95_2025-10-19T03-32-00/json_dump.json",
+    "final_url": "about:blank"
+  },
+  "pages_visited": [
+    "about:blank"
+  ]
+}

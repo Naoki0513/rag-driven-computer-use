@@ -23,12 +23,14 @@ import { browserSelect } from './tools/browser-select.js';
 import { browserCheck } from './tools/browser-check.js';
 import { browserEvaluateScript } from './tools/browser-evaluate.js';
 import { memoryTool } from './tools/memory.js';
+import { browserWebArenaAnswer } from './tools/browser-webarena-answer.js';
 import type { ToolUseInput } from './tools/types.js';
 import { recordBedrockCallStart, recordBedrockCallSuccess, recordBedrockCallError, flushObservability } from './observability.js';
 
 export type ConverseLoopResult = {
   fullText: string;
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  webarenaAnswer?: string | undefined; // webarena_final_answerツールが呼ばれた場合の答え
 };
 
 function supportsThinking(modelId: string): boolean {
@@ -109,6 +111,7 @@ export async function converseLoop(
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
   let fullText = '';
+  let webarenaAnswer: string | undefined = undefined;
   let iterationCount = 0;
   const maxIterations = Number(process.env.AGENT_MAX_ITERATIONS) || 1000;
 
@@ -566,6 +569,28 @@ export async function converseLoop(
             console.log(`Tool result (browser_screenshot): captured image`);
             return result;
           }});
+        } else if (name === 'webarena_final_answer') {
+          const inp = (toolUse as any).input ?? {};
+          parallelTasks.push({ index: i, toolUseId, run: async () => {
+            console.log(`Calling tool: webarena_final_answer ${JSON.stringify(inp)}`);
+            const payload: any = { 
+              answer: String(inp.answer ?? ''), 
+              reasoning: String(inp.reasoning ?? '') 
+            };
+            const result = await browserWebArenaAnswer(payload);
+            console.log(`Tool result (webarena_final_answer): ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}`);
+            
+            // 結果から答えを抽出して保存
+            try {
+              const resultData = JSON.parse(result);
+              if (resultData.answer) {
+                webarenaAnswer = String(resultData.answer);
+                console.log(`[WebArena] 最終回答が設定されました: ${webarenaAnswer}`);
+              }
+            } catch {}
+            
+            return result;
+          }});
         }
       }
 
@@ -643,7 +668,11 @@ export async function converseLoop(
   }
 
   try { await flushObservability(); } catch {}
-  return { fullText, usage: { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite } };
+  return { 
+    fullText, 
+    usage: { input: totalInput, output: totalOutput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite },
+    webarenaAnswer
+  };
 }
 
 

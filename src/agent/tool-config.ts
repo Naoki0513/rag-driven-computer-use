@@ -2,8 +2,9 @@ import { type ToolConfiguration } from '@aws-sdk/client-bedrock-runtime';
 
 export function buildToolConfig(): ToolConfiguration {
   const isEn = String(process.env.AGENT_LANG || '').toLowerCase().startsWith('en');
-  return {
-    tools: [
+  const isWebArenaEval = String(process.env.AGENT_WEBARENA_EVAL ?? 'false').toLowerCase() === 'true';
+  
+  const tools: any[] = [
       {
         toolSpec: {
           name: 'browser_snapshot',
@@ -311,8 +312,37 @@ export function buildToolConfig(): ToolConfiguration {
           },
         },
       },
-    ],
-  } as ToolConfiguration;
+    ];
+
+  // WebArena評価モードの場合は専用の回答ツールを追加
+  if (isWebArenaEval) {
+    tools.push({
+      toolSpec: {
+        name: 'webarena_final_answer',
+        description: isEn
+          ? 'Provide the final answer for WebArena evaluation. This tool formats your answer according to the evaluation method specified in the config file (exact_match, must_include, or fuzzy_match). Use this tool instead of ending your response naturally when you have completed the task.\n- exact_match: Output only the short answer text that matches the reference exactly\n- must_include: Include all required elements in your answer\n- fuzzy_match: Provide "N/A" if the task is unachievable, or a detailed explanation otherwise\nPass your answer text and optional reasoning.'
+          : 'WebArena評価用の最終回答を提供します。このツールはconfigファイルで指定された評価方法（exact_match、must_include、fuzzy_match）に応じて答えを整形します。タスク完了時は通常の応答を終える代わりにこのツールを使用してください。\n- exact_match: 参照と完全一致する短い答えのみを出力\n- must_include: 必要な要素を全て含む答えを出力\n- fuzzy_match: タスクが達成不可能な場合は "N/A"、それ以外は詳細な説明を提供\n答えのテキストと任意の推論を渡します。',
+        inputSchema: {
+          json: {
+            type: 'object',
+            properties: {
+              answer: { 
+                type: 'string', 
+                description: isEn ? 'Your final answer to the task' : 'タスクに対する最終的な答え'
+              },
+              reasoning: { 
+                type: 'string', 
+                description: isEn ? 'Optional reasoning explaining how you arrived at this answer' : 'この答えに至った推論（任意）'
+              }
+            },
+            required: ['answer']
+          }
+        }
+      }
+    });
+  }
+
+  return { tools } as ToolConfiguration;
 }
 
 

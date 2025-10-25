@@ -1,12 +1,47 @@
 let _systemPromptShown = false;
 
-export function createSystemPrompt(databaseSchema: string = ""): string {
+export function createSystemPrompt(databaseSchema: string = "", evalConfig: any = null): string {
   const isEn = String(process.env.AGENT_LANG || '').toLowerCase().startsWith('en');
   const schemaSection = (databaseSchema && databaseSchema.trim().length > 0)
     ? (isEn
         ? `\n[CSV/ DuckDB Schema]\n${databaseSchema.trim()}\n`
         : `\n[CSV/ DuckDB スキーマ]\n${databaseSchema.trim()}\n`)
     : '';
+  
+  // WebArena評価情報を追加
+  let evalSection = '';
+  if (evalConfig) {
+    const evalTypes = evalConfig.eval_types || [];
+    const refAnswers = evalConfig.reference_answers || {};
+    
+    if (isEn) {
+      evalSection = `\n[WebArena Evaluation]\n`;
+      evalSection += `Evaluation type(s): ${evalTypes.join(', ')}\n`;
+      if (refAnswers.exact_match) {
+        evalSection += `- exact_match: "${refAnswers.exact_match}"\n`;
+      }
+      if (refAnswers.must_include && Array.isArray(refAnswers.must_include)) {
+        evalSection += `- must_include: ${JSON.stringify(refAnswers.must_include)}\n`;
+      }
+      if (refAnswers.fuzzy_match) {
+        evalSection += `- fuzzy_match: ${refAnswers.fuzzy_match === 'N/A' ? 'N/A (task may be unachievable)' : JSON.stringify(refAnswers.fuzzy_match)}\n`;
+      }
+      evalSection += `\nIMPORTANT: When completing the task, use the webarena_final_answer tool to provide your answer in the correct format.\n`;
+    } else {
+      evalSection = `\n[WebArena評価]\n`;
+      evalSection += `評価タイプ: ${evalTypes.join(', ')}\n`;
+      if (refAnswers.exact_match) {
+        evalSection += `- exact_match: "${refAnswers.exact_match}"\n`;
+      }
+      if (refAnswers.must_include && Array.isArray(refAnswers.must_include)) {
+        evalSection += `- must_include: ${JSON.stringify(refAnswers.must_include)}\n`;
+      }
+      if (refAnswers.fuzzy_match) {
+        evalSection += `- fuzzy_match: ${refAnswers.fuzzy_match === 'N/A' ? 'N/A（タスクが達成不可能な可能性）' : JSON.stringify(refAnswers.fuzzy_match)}\n`;
+      }
+      evalSection += `\n重要: タスク完了時は webarena_final_answer ツールを使用して、適切な形式で答えを提供してください。\n`;
+    }
+  }
 
   const ja = `
 目的
@@ -19,7 +54,7 @@ export function createSystemPrompt(databaseSchema: string = ""): string {
   - site: スキーム+ホスト
   - snapshotforai: 操作指向スナップショット（ref/役割付き）
   - timestamp: 取得時刻
-${schemaSection}
+${schemaSection}${evalSection}
 制約
 - 本エージェントはデータベース(pages)に保管されたURL/IDのサイトのみを対象とし、それ以外のサイトへはアクセスしない。
 フロー
@@ -71,7 +106,7 @@ Data foundation
   - site: scheme + host
   - snapshotforai: action-oriented snapshot (with refs/roles)
   - timestamp: captured time
-${schemaSection}
+${schemaSection}${evalSection}
 Constraints
 - The agent only targets sites whose URL/ID exist in the database (pages). It must not access any site outside of it.
 Flow
@@ -115,8 +150,8 @@ Output
   return isEn ? en : ja;
 }
 
-export function createSystemPromptWithSchema(databaseSchema: string = ""): string {
-  const systemPrompt = createSystemPrompt(databaseSchema);
+export function createSystemPromptWithSchema(databaseSchema: string = "", evalConfig: any = null): string {
+  const systemPrompt = createSystemPrompt(databaseSchema, evalConfig);
   if (!_systemPromptShown) {
     const isEn = String(process.env.AGENT_LANG || '').toLowerCase().startsWith('en');
     console.log(isEn ? "\n[System prompt (shown only once)]" : "\n[システムプロンプト（初回のみ表示）]");

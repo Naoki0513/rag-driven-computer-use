@@ -37,8 +37,25 @@ def _clean_answer(s: str) -> str:
 
 
 def _exact_match(ref: str, pred: str) -> float:
-    """完全一致判定"""
-    return 1.0 if _clean_answer(pred) == _clean_answer(ref) else 0.0
+    """
+    完全一致判定
+    WebArenaでは、exact_matchは短い単純な答え（名前、数値など）に対して、
+    長い文章に含まれている場合も正解とみなす
+    """
+    clean_ref = _clean_answer(ref)
+    clean_pred = _clean_answer(pred)
+    
+    # 完全一致の場合
+    if clean_pred == clean_ref:
+        return 1.0
+    
+    # refが短い単純な答え（単語数が3以下）の場合、predに含まれていれば1.0を返す
+    # これはWebArenaの一般的な動作に従う
+    word_count = len(clean_ref.split())
+    if word_count <= 3 and clean_ref in clean_pred:
+        return 1.0
+    
+    return 0.0
 
 
 def _must_include(ref: str, pred: str, tokenize: bool = False) -> float:
