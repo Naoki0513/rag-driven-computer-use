@@ -65,6 +65,12 @@ output/
 results/
 crawl_results/
 
+# Benchmark resources - large generated files
+benchmarks/**/resources/crawl.csv
+benchmarks/**/resources/*.faiss
+benchmarks/**/resources/*.parquet
+benchmarks/**/resources/index/
+
 # Neo4j import/export
 import/
 export/

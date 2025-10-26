@@ -122,6 +122,27 @@ npm run start:agent
 \* `AWS_PROFILE` を使わない場合は `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` を設定
 \** `--prompt` を使わない場合のみ必須
 
+## プロジェクト構造
+
+```
+rag-driven-computer-use/
+├── src/                           # メインソースコード
+│   ├── agent/                    # AIエージェント
+│   ├── crawler/                  # Webクローラ
+│   ├── indexer/                  # インデックス作成
+│   └── utilities/                # ユーティリティ
+├── benchmarks/                    # 評価・ベンチマーク
+│   └── webarena-shopping-admin/  # WebArena Shopping Admin ベンチマーク（41タスク）
+│       ├── scripts/              # 評価スクリプト
+│       ├── configs/              # タスク設定
+│       ├── resources/            # クローラデータ＆インデックス
+│       └── tasks/                # 実行結果
+├── output/                        # 開発用一時出力
+└── dist/                          # ビルド成果物
+```
+
+詳細は [benchmarks/README.md](./benchmarks/README.md) を参照してください。
+
 ## アーキテクチャ
 
 ```
