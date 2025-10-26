@@ -58,11 +58,38 @@ done
 - **クローラCSV**: `resources/crawl.csv`
 - **検索インデックス**: `resources/index/`
 
+### リソースファイルのダウンロード
+
+`resources/` ディレクトリのファイル（合計約1GB）は、サイズが大きいためGitリポジトリには含まれていません。
+以下のGoogle Driveリンクからダウンロードできます：
+
+**📦 ダウンロード**: [webarena-shopping-admin-resources.tar.gz (498MB)](https://drive.google.com/file/d/1pSuZCAlXptybtUL43LEZBZnjtrmrXFD4/view?usp=sharing)
+
+#### ダウンロード後の展開方法
+
+```bash
+# ダウンロードしたファイルをプロジェクトルートに配置
+cd /home/ec2-user/webarena-local/rag-driven-computer-use
+
+# 解凍（自動的にbenchmarks/webarena-shopping-admin/resources/に展開されます）
+tar -xzf webarena-shopping-admin-resources.tar.gz
+
+# 解凍後のファイル確認
+ls -lh benchmarks/webarena-shopping-admin/resources/
+```
+
+#### 含まれているファイル
+
+- `crawl.csv` (78MB) - クローラ出力データ
+- `index/vectors.faiss` (802MB) - FAISSベクトルインデックス
+- `index/chunks.parquet` (117MB) - チャンク情報
+- `index/vectors.faiss.mapping.json` (3.4MB) - マッピング情報
+
 ## 注意事項
 
 - このベンチマークは**WebArena Shopping Admin**サイト専用です
 - 他のWebArenaサイト（Reddit、GitLab等）は含まれていません
-- 大容量ファイル（特にvectors.faiss）のため、Git管理には注意が必要です
+- **リソースファイルは別途ダウンロードが必要です**（上記のGoogle Driveリンクから取得）
 
 ## 関連ディレクトリ
 

@@ -135,13 +135,15 @@ rag-driven-computer-use/
 │   └── webarena-shopping-admin/  # WebArena Shopping Admin ベンチマーク（41タスク）
 │       ├── scripts/              # 評価スクリプト
 │       ├── configs/              # タスク設定
-│       ├── resources/            # クローラデータ＆インデックス
+│       ├── resources/            # クローラデータ＆インデックス（※Google Driveから取得）
 │       └── tasks/                # 実行結果
 ├── output/                        # 開発用一時出力
 └── dist/                          # ビルド成果物
 ```
 
 詳細は [benchmarks/README.md](./benchmarks/README.md) を参照してください。
+
+**注意**: `benchmarks/webarena-shopping-admin/resources/` ディレクトリのファイル（約1GB）は、サイズが大きいためGitリポジトリに含まれていません。[Google Driveからダウンロード](https://drive.google.com/file/d/1pSuZCAlXptybtUL43LEZBZnjtrmrXFD4/view?usp=sharing)してください。
 
 ## アーキテクチャ
 

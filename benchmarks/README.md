@@ -20,6 +20,7 @@ benchmarks/
 
 - **サイト**: WebArena Shopping Admin
 - **タスク数**: 41
+- **リソースサイズ**: 約1GB（Git管理外、[Google Driveからダウンロード](https://drive.google.com/file/d/1pSuZCAlXptybtUL43LEZBZnjtrmrXFD4/view?usp=sharing)）
 - **詳細**: [webarena-shopping-admin/README.md](./webarena-shopping-admin/README.md)
 
 ## 今後の拡張予定
