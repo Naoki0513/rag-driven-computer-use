@@ -132,6 +132,9 @@ rag-driven-computer-use/
 │   ├── indexer/                  # インデックス作成
 │   └── utilities/                # ユーティリティ
 ├── benchmarks/                    # 評価・ベンチマーク
+│   ├── setup/                    # WebArena Shopping Admin セットアップスクリプト
+│   │   ├── start-shopping-admin.sh    # Dockerコンテナ起動 + URL設定
+│   │   └── verify-services.sh         # サービス疎通確認
 │   └── webarena-shopping-admin/  # WebArena Shopping Admin ベンチマーク（41タスク）
 │       ├── scripts/              # 評価スクリプト
 │       ├── configs/              # タスク設定
@@ -144,6 +147,27 @@ rag-driven-computer-use/
 詳細は [benchmarks/README.md](./benchmarks/README.md) を参照してください。
 
 **注意**: `benchmarks/webarena-shopping-admin/resources/` ディレクトリのファイル（約1GB）は、サイズが大きいためGitリポジトリに含まれていません。[Google Driveからダウンロード](https://drive.google.com/file/d/1pSuZCAlXptybtUL43LEZBZnjtrmrXFD4/view?usp=sharing)してください。
+
+## WebArena ベンチマーク環境のセットアップ
+
+WebArena Shopping Admin ベンチマークを実行するには、事前に環境のセットアップが必要です。
+
+### クイックスタート
+
+```bash
+cd benchmarks/setup
+
+# 1. Shopping Admin を起動
+./start-shopping-admin.sh
+
+# 2. サービスの疎通確認
+./verify-services.sh
+
+# 3. ブラウザでアクセス
+# → http://127.0.0.1:7780/admin
+```
+
+**詳細**: [benchmarks/setup/README.md](./benchmarks/setup/README.md)
 
 ## アーキテクチャ
 

@@ -2,6 +2,24 @@
 
 このディレクトリには、WebArenaのShopping Adminサイトに対する評価データと実行結果が含まれています。
 
+## 事前準備
+
+**重要**: このベンチマークを実行する前に、WebArena Shopping Admin サイトのセットアップが必要です。
+
+セットアップ手順: [../setup/README.md](../setup/README.md)
+
+### クイックセットアップ
+
+```bash
+cd ../setup
+
+# 1. Shopping Admin を起動
+./start-shopping-admin.sh
+
+# 2. サービスの疎通確認
+./verify-services.sh
+```
+
 ## ディレクトリ構造
 
 ```

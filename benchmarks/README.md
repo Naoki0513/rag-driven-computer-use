@@ -7,12 +7,38 @@
 ```
 benchmarks/
 ├── README.md                      # このファイル
+├── setup/                         # WebArena Shopping Admin セットアップスクリプト
+│   ├── README.md                  # セットアップガイド
+│   ├── start-shopping-admin.sh    # Dockerコンテナ起動 + URL設定
+│   └── verify-services.sh         # サービス疎通確認
 └── webarena-shopping-admin/       # WebArena Shopping Admin ベンチマーク
     ├── scripts/                   # 評価スクリプト
     ├── configs/                   # タスク設定ファイル（41個）
     ├── resources/                 # クローラデータとインデックス（1GB）
     └── tasks/                     # タスク別実行結果（41個）
 ```
+
+## セットアップ
+
+WebArena Shopping Admin ベンチマークを実行する前に、環境のセットアップが必要です。
+
+### クイックスタート
+
+```bash
+cd benchmarks/setup
+
+# 1. Shopping Admin を起動
+./start-shopping-admin.sh
+
+# 2. サービスの疎通確認
+./verify-services.sh
+
+# 3. ブラウザでアクセス
+# → http://127.0.0.1:7780/admin
+# → ユーザー名: admin / パスワード: admin1234
+```
+
+**詳細**: [setup/README.md](./setup/README.md)
 
 ## 現在のベンチマーク
 

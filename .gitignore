@@ -85,6 +85,10 @@ playwright-report/
 test-results/
 playwright/.cache/
 
+# Authentication files (Playwright Storage State)
+.auth/
+*_state.json
+
 # Test coverage
 htmlcov/
 .coverage
